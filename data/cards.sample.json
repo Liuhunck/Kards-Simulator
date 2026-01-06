@@ -1,0 +1,40 @@
+{
+  "cards": [
+    {
+      "id": "BASE",
+      "name": "Headquarters",
+      "type": "base"
+    },
+    {
+      "id": "UNIT_INF_1",
+      "name": "Infantry",
+      "type": "unit",
+      "cost": 1,
+      "acost": 1,
+      "attack": 1,
+      "health": 1,
+      "abilities": []
+    },
+    {
+      "id": "UNIT_DRAW_2",
+      "name": "Radio Team",
+      "type": "unit",
+      "cost": 2,
+      "acost": 2,
+      "attack": 1,
+      "health": 2,
+      "abilities": [
+        { "id": "on_deploy_draw", "params": { "n": 1 } }
+      ]
+    },
+    {
+      "id": "ORDER_DMG_2",
+      "name": "Artillery Strike",
+      "type": "order",
+      "cost": 2,
+      "abilities": [
+        { "id": "on_play_deal_damage", "params": { "amount": 2 } }
+      ]
+    }
+  ]
+}
