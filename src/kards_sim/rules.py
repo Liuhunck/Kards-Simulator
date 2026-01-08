@@ -40,6 +40,32 @@ def can_deploy_unit(state: GameState, pid: PlayerId, iid: InstanceId, pos: int) 
     )
 
 
+def can_advance_unit(
+    state: GameState, pid: PlayerId, iid: InstanceId, pos: int
+) -> None:
+    inst = state.get_instance(iid)
+    require(inst.owner == pid, "not your unit")
+    require(inst.zone == Zone.BOARD, "unit not on board")
+    require(inst.lane == Lane.SUPPORTLINE, "unit not in supportline")
+    require(not inst.exhausted, "unit exhausted")
+    require(state.card_type_of(iid) == CardType.UNIT, "not a unit")
+    require(
+        state.frontline_owner() != state.other(pid),
+        "cannot advance when enemy controls frontline",
+    )
+    require(
+        len(state.frontline) < state.config.columns,
+        "frontline is full",
+    )
+    require(
+        0 <= pos <= len(state.frontline),
+        "index out of frontline range",
+    )
+    require(state.players[pid].credits >= inst.cost, "not enough credits")
+    require(state.supportline[pid].count(iid) == 1, "unit not in your supportline")
+    require(inst.current_health is not None and inst.current_health > 0, "unit dead")
+
+
 def can_attack(
     state: GameState,
     pid: PlayerId,

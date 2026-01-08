@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import random
 from pathlib import Path
 from typing import Iterable
+from dataclasses import dataclass
 
 from .cards import AbilitySpec, CardDefinition, validate_definition
 from .resolver import Resolver, StepResult
@@ -61,13 +62,22 @@ class Engine:
             next_instance_id=1,
         )
 
+        # Allocate base instances
+        play0_base_iid = state.allocate_base_instance(
+            owner=PlayerId(0), hp=cfg.starting_p0_hp
+        )
+        play1_base_iid = state.allocate_base_instance(
+            owner=PlayerId(1), hp=cfg.starting_p1_hp
+        )
+
+        # Initialize players
         state.players[PlayerId(0)] = PlayerState(
             player_id=PlayerId(0),
-            hq_health=cfg.starting_hq_health,
+            base_card_id=play0_base_iid,
         )
         state.players[PlayerId(1)] = PlayerState(
             player_id=PlayerId(1),
-            hq_health=cfg.starting_hq_health,
+            base_card_id=play1_base_iid,
         )
 
         # Allocate deck instances
@@ -76,19 +86,16 @@ class Engine:
                 iid = state.allocate_instance(def_id, owner=pid, zone=Zone.DECK)
                 state.players[pid].deck.append(iid)
 
+        # Shuffle decks
+        random.seed(state.rng_seed)
+        random.shuffle(state.players[PlayerId(0)].deck)
+        random.shuffle(state.players[PlayerId(1)].deck)
+
         # Initialize board slots
         state.frontline = []
         state.supportline = {
-            PlayerId(0): [
-                state.allocate_instance(
-                    def_id="BASE", owner=PlayerId(0), zone=Zone.BOARD
-                )
-            ],
-            PlayerId(1): [
-                state.allocate_instance(
-                    def_id="BASE", owner=PlayerId(1), zone=Zone.BOARD
-                )
-            ],
+            PlayerId(0): [play0_base_iid],
+            PlayerId(1): [play1_base_iid],
         }
 
         # Starting credits and draw

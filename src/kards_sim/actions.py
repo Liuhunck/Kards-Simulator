@@ -19,6 +19,13 @@ class PlayCard(Action):
 
 
 @dataclass(frozen=True, slots=True)
+class Advance(Action):
+    player_id: PlayerId
+    card: InstanceId
+    index: int
+
+
+@dataclass(frozen=True, slots=True)
 class Attack(Action):
     player_id: PlayerId
     attacker: InstanceId

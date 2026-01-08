@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Deque
 from collections import deque
 
-from .actions import Attack, EndTurn, PlayCard
+from .actions import Attack, EndTurn, PlayCard, Advance
 from .abilities.registry import AbilityRegistry, default_registry
 from .events import (
     CardPlayed,
@@ -15,7 +15,14 @@ from .events import (
     UnitDeployed,
     UnitDestroyed,
 )
-from .rules import RuleViolation, can_attack, can_deploy_unit, can_play_card, require
+from .rules import (
+    RuleViolation,
+    can_attack,
+    can_deploy_unit,
+    can_play_card,
+    can_advance_unit,
+    require,
+)
 from .state import GameState
 from .types import CardType, InstanceId, Lane, PlayerId, Zone
 
@@ -60,10 +67,10 @@ def _apply_damage_to_unit(state: GameState, unit: InstanceId, amount: int) -> No
     inst.damage_taken += amount
 
 
-def _apply_damage_to_hq(state: GameState, pid: PlayerId, amount: int) -> None:
-    state.players[pid].hq_health -= amount
-    if state.players[pid].hq_health < 0:
-        state.players[pid].hq_health = 0
+# def _apply_damage_to_hq(state: GameState, pid: PlayerId, amount: int) -> None:
+#     state.players[pid].hq_health -= amount
+#     if state.players[pid].hq_health < 0:
+#         state.players[pid].hq_health = 0
 
 
 def _check_deaths(state: GameState) -> list[UnitDestroyed]:
@@ -110,31 +117,34 @@ class Resolver:
                 can_play_card(state, action.player_id, action.card)
                 inst = state.get_instance(action.card)
                 defn = state.get_def(inst.def_id)
-                state.players[action.player_id].credits -= defn.cost
-                # Remove from hand
-                state.players[action.player_id].hand.remove(action.card)
-                q.append(
-                    CardPlayed(
-                        player_id=action.player_id,
-                        card=action.card,
-                        target=action.target,
-                        target_player=(
-                            state.other(action.player_id) if action.target_hq else None
-                        ),
-                    )
-                )
+                player = state.players[action.player_id]
+                # q.append(
+                #     CardPlayed(
+                #         player_id=action.player_id,
+                #         card=action.card,
+                #         target=action.target,
+                #         target_player=(
+                #             state.other(action.player_id) if action.target_hq else None
+                #         ),
+                #     )
+                # )
 
                 if defn.card_type == CardType.UNIT:
                     require(action.index is not None, "unit requires index")
                     assert action.index is not None
                     can_deploy_unit(state, action.player_id, action.card, action.index)
-                    # Place on board
+
+                    player.credits -= defn.cost
+                    player.hand.remove(action.card)
                     state.supportline[action.player_id].insert(
                         action.index, action.card
                     )
+
+                    inst.cost = defn.acost
                     inst.zone = Zone.BOARD
                     inst.lane = Lane.SUPPORTLINE
                     inst.exhausted = True
+
                     q.append(
                         UnitDeployed(
                             player_id=action.player_id,
@@ -146,7 +156,18 @@ class Resolver:
                     # Move order to discard
                     inst.lane = None
                     inst.zone = Zone.DISCARD
-                    state.players[action.player_id].discard.append(action.card)
+                    player.credits -= defn.cost
+                    player.discard.append(action.card)
+                    player.hand.remove(action.card)
+
+            elif isinstance(action, Advance):
+                can_advance_unit(state, action.player_id, action.card, action.index)
+                inst = state.get_instance(action.card)
+                # Move unit from supportline to frontline
+                state.players[action.player_id].credits -= inst.cost
+                state.supportline[action.player_id].remove(action.card)
+                state.frontline.insert(action.index, action.card)
+                inst.lane = Lane.FRONTLINE
 
             elif isinstance(action, Attack):
                 can_attack(
@@ -202,8 +223,8 @@ class Resolver:
                 if isinstance(ev, DamageDealt):
                     if ev.target is not None:
                         _apply_damage_to_unit(state, ev.target, ev.amount)
-                    elif ev.target_player is not None:
-                        _apply_damage_to_hq(state, ev.target_player, ev.amount)
+                    # elif ev.target_player is not None:
+                    #     _apply_damage_to_hq(state, ev.target_player, ev.amount)
 
                     for d_ev in _check_deaths(state):
                         q.append(d_ev)

@@ -15,6 +15,8 @@ class CardInstance:
     lane: Lane | None = None
     pos: BoardPos | None = None  # not used
 
+    cost: int = 0
+
     base_attack: int | None = None
     base_health: int | None = None
 
@@ -44,7 +46,7 @@ class CardInstance:
 @dataclass(slots=True)
 class PlayerState:
     player_id: PlayerId
-    hq_health: int = 20
+    base_card_id: InstanceId
     credits: int = 0
     max_credits: int = 0
 
@@ -64,8 +66,8 @@ class PendingChoice:
 class GameConfig:
     columns: int = 5
     starting_hand: int = 4
-    starting_hq_health: int = 20
-    max_hq_health: int = 20
+    starting_p0_hp: int = 20
+    starting_p1_hp: int = 20
 
 
 @dataclass(slots=True)
@@ -106,6 +108,20 @@ class GameState:
 
     def get_def(self, def_id: str) -> CardDefinition:
         return self.definitions[def_id]
+
+    def allocate_base_instance(self, owner: PlayerId, hp: int) -> InstanceId:
+        iid = InstanceId(self.next_instance_id)
+        self.next_instance_id += 1
+        inst = CardInstance(
+            instance_id=iid,
+            def_id="BASE",
+            owner=owner,
+            zone=Zone.BOARD,
+            base_health=hp,
+        )
+        inst.lane = Lane.SUPPORTLINE
+        self.instances[iid] = inst
+        return iid
 
     def allocate_instance(self, def_id: str, owner: PlayerId, zone: Zone) -> InstanceId:
         iid = InstanceId(self.next_instance_id)
