@@ -112,4 +112,25 @@ def default_registry() -> AbilityRegistry:
 
     reg.register("on_play_deal_damage", _on_play_deal_damage)
 
+    # Keyword ability: ambush (strikes first when attacked).
+    # The actual combat ordering is handled by the resolver; this registration
+    # exists so data-driven cards can declare the ability without raising.
+    def _ambush_keyword(source_iid: int, params: dict) -> Ability:
+        _ = params
+
+        def trigger(state: GameState, ev: Event) -> bool:
+            return False
+
+        def handler(state: GameState, ev: Event) -> list[Event]:
+            return []
+
+        return Ability(
+            ability_id="ambush",
+            source_iid=source_iid,
+            trigger=trigger,
+            handler=handler,
+        )
+
+    reg.register("ambush", _ambush_keyword)
+
     return reg

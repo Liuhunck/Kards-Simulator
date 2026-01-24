@@ -15,7 +15,7 @@ class CardInstance:
     lane: Lane | None = None
     pos: BoardPos | None = None  # not used
 
-    cost: int = 0
+    cost: int | None = None
 
     base_attack: int | None = None
     base_health: int | None = None
@@ -53,6 +53,7 @@ class PlayerState:
     deck: list[InstanceId] = field(default_factory=list)
     hand: list[InstanceId] = field(default_factory=list)
     discard: list[InstanceId] = field(default_factory=list)
+    countermeasures: list[InstanceId] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,8 +98,7 @@ class GameState:
 
     def all_board_unit_ids(self) -> list[InstanceId]:
         out: list[InstanceId] = []
-        for pid, slots in self.supportline.items():
-            _ = pid
+        for _, slots in self.supportline.items():
             out.extend(slots)
         out.extend(self.frontline)
         return out

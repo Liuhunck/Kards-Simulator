@@ -30,7 +30,7 @@ class CardPlayed(Event):
     player_id: PlayerId
     card: InstanceId
     target: InstanceId | None = None
-    target_player: PlayerId | None = None
+    target_player: PlayerId | None = None  ### 没用
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +44,6 @@ class UnitDeployed(Event):
 class DamageDealt(Event):
     source: InstanceId | None
     target: InstanceId | None
-    target_player: PlayerId | None
     amount: int
 
 

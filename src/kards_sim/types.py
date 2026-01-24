@@ -13,6 +13,15 @@ class CardType(str, Enum):
     BASE = "base"
     UNIT = "unit"
     ORDER = "order"
+    COUNTERMEASURE = "countermeasure"
+
+
+class UnitClass(str, Enum):
+    INFANTRY = "infantry"
+    TANK = "tank"
+    ARTILLERY = "artillery"
+    FIGHTER = "fighter"
+    BOMBER = "bomber"
 
 
 class Lane(str, Enum):

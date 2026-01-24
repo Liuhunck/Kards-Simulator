@@ -24,7 +24,7 @@ from .rules import (
     require,
 )
 from .state import GameState
-from .types import CardType, InstanceId, Lane, PlayerId, Zone
+from .types import CardType, InstanceId, Lane, PlayerId, UnitClass, Zone
 
 
 @dataclass(slots=True)
@@ -67,12 +67,6 @@ def _apply_damage_to_unit(state: GameState, unit: InstanceId, amount: int) -> No
     inst.damage_taken += amount
 
 
-# def _apply_damage_to_hq(state: GameState, pid: PlayerId, amount: int) -> None:
-#     state.players[pid].hq_health -= amount
-#     if state.players[pid].hq_health < 0:
-#         state.players[pid].hq_health = 0
-
-
 def _check_deaths(state: GameState) -> list[UnitDestroyed]:
     destroyed: list[UnitDestroyed] = []
     for iid, inst in list(state.instances.items()):
@@ -87,6 +81,7 @@ def _end_turn_bookkeeping(state: GameState) -> None:
     state.turn += 1
     # Refresh credits and units
     p = state.players[state.active_player]
+    ### TODO: check if max_credits < 12
     p.max_credits = min(p.max_credits + 1, 12)
     p.credits = p.max_credits
     for iid in state.all_board_unit_ids():
@@ -118,16 +113,16 @@ class Resolver:
                 inst = state.get_instance(action.card)
                 defn = state.get_def(inst.def_id)
                 player = state.players[action.player_id]
-                # q.append(
-                #     CardPlayed(
-                #         player_id=action.player_id,
-                #         card=action.card,
-                #         target=action.target,
-                #         target_player=(
-                #             state.other(action.player_id) if action.target_hq else None
-                #         ),
-                #     )
-                # )
+                q.append(
+                    CardPlayed(
+                        player_id=action.player_id,
+                        card=action.card,
+                        target=action.target,
+                        target_player=(
+                            state.other(action.player_id) if action.target_hq else None
+                        ),
+                    )
+                )
 
                 if defn.card_type == CardType.UNIT:
                     require(action.index is not None, "unit requires index")
@@ -164,6 +159,7 @@ class Resolver:
                 can_advance_unit(state, action.player_id, action.card, action.index)
                 inst = state.get_instance(action.card)
                 # Move unit from supportline to frontline
+                assert inst.cost is not None
                 state.players[action.player_id].credits -= inst.cost
                 state.supportline[action.player_id].remove(action.card)
                 state.frontline.insert(action.index, action.card)
@@ -175,36 +171,77 @@ class Resolver:
                     action.player_id,
                     action.attacker,
                     action.defender,
-                    action.defender_hq,
                 )
                 a = state.get_instance(action.attacker)
                 a.exhausted = True
 
-                if action.defender_hq:
-                    q.append(
-                        DamageDealt(
-                            source=action.attacker,
-                            target=None,
-                            target_player=state.other(action.player_id),
-                            amount=int(a.attack or 0),
-                        )
-                    )
-                else:
-                    d = state.get_instance(action.defender)  # type: ignore[arg-type]
-                    q.append(
-                        DamageDealt(
-                            source=action.attacker,
-                            target=action.defender,
-                            target_player=None,
-                            amount=int(a.attack or 0),
-                        )
-                    )
+                assert action.defender is not None
+                d = state.get_instance(action.defender)
+
+                a_def = state.get_def(a.def_id)
+                d_def = state.get_def(d.def_id)
+
+                def has_retaliatory_damage() -> bool:
+                    if d_def.card_type == CardType.BASE:
+                        return False
+                    if a_def.unit_class == UnitClass.ARTILLERY:
+                        return False
+                    if (
+                        a_def.unit_class == UnitClass.BOMBER
+                        and d_def.unit_class != UnitClass.FIGHTER
+                    ):
+                        return False
+                    if d_def.unit_class == UnitClass.BOMBER:
+                        return False
+                    return True
+
+                # Keyword check: ambush on the defender means defender strikes first.
+                has_ambush = any(
+                    spec.ability_id.lower() == "ambush" for spec in d_def.abilities
+                )
+
+                assert a.current_health is not None
+                assert d.current_health is not None
+                assert a.attack is not None
+                if has_ambush:
+                    assert d.attack is not None
                     q.append(
                         DamageDealt(
                             source=action.defender,
                             target=action.attacker,
-                            target_player=None,
-                            amount=int(d.attack or 0),
+                            amount=d.attack,
+                        )
+                    )
+                    if d.attack < a.current_health:
+                        q.append(
+                            DamageDealt(
+                                source=action.attacker,
+                                target=action.defender,
+                                amount=a.attack,
+                            )
+                        )
+                elif has_retaliatory_damage():
+                    q.append(
+                        DamageDealt(
+                            source=action.attacker,
+                            target=action.defender,
+                            amount=a.attack,
+                        )
+                    )
+                    assert d.attack is not None
+                    q.append(
+                        DamageDealt(
+                            source=action.defender,
+                            target=action.attacker,
+                            amount=d.attack,
+                        )
+                    )
+                else:
+                    q.append(
+                        DamageDealt(
+                            source=action.attacker,
+                            target=action.defender,
+                            amount=a.attack,
                         )
                     )
 
@@ -223,8 +260,6 @@ class Resolver:
                 if isinstance(ev, DamageDealt):
                     if ev.target is not None:
                         _apply_damage_to_unit(state, ev.target, ev.amount)
-                    # elif ev.target_player is not None:
-                    #     _apply_damage_to_hq(state, ev.target_player, ev.amount)
 
                     for d_ev in _check_deaths(state):
                         q.append(d_ev)

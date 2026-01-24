@@ -98,7 +98,7 @@ def main() -> int:
             print("  deploy(d) <hand_index> <support_index>    - deploy unit from hand")
             print("  order(o) <hand_index> <target_iid>        - play damage order")
             print("  adv(a) <support_index> <front_index>      - advance to frontline")
-            print("  atk(k) <attacker_iid> <def_iid>           - attack unit")
+            print("  atk(k) <attacker_iid> <defender_iid>      - attack unit")
             print("  end(e)                                    - end turn")
             continue
 

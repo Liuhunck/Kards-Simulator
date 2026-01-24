@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .state import GameState
-from .types import BoardPos, CardType, InstanceId, Lane, PlayerId, Zone
+from .types import BoardPos, CardType, InstanceId, Lane, PlayerId, UnitClass, Zone
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +61,8 @@ def can_advance_unit(
         0 <= pos <= len(state.frontline),
         "index out of frontline range",
     )
-    require(state.players[pid].credits >= inst.cost, "not enough credits")
+    if inst.cost is not None:
+        require(state.players[pid].credits >= inst.cost, "not enough credits")
     require(state.supportline[pid].count(iid) == 1, "unit not in your supportline")
     require(inst.current_health is not None and inst.current_health > 0, "unit dead")
 
@@ -71,39 +72,94 @@ def can_attack(
     pid: PlayerId,
     attacker: InstanceId,
     defender: InstanceId | None,
-    defender_hq: bool,
 ) -> None:
     require(pid == state.active_player, "not your turn")
     a = state.get_instance(attacker)
     require(a.owner == pid, "not your unit")
     require(a.zone == Zone.BOARD, "attacker not on board")
-    require(a.pos is not None, "attacker missing board pos")
+    require(a.lane is not None, "attacker missing lane")
+    # require(a.pos is not None, "attacker missing board pos")
     require(not a.exhausted, "attacker exhausted")
     require(state.card_type_of(attacker) == CardType.UNIT, "attacker not a unit")
     require(a.current_health is not None and a.current_health > 0, "attacker dead")
 
-    # Faithful KARDS combat rules have nuances; this is a conservative first-pass:
-    # - Default target is opposing unit in same column.
-    # - HQ can only be attacked from FRONTLINE when opposing slot is empty.
-    if defender_hq:
-        require(a.lane == Lane.FRONTLINE, "only frontline units can attack HQ")
-        # In KARDS, HQ is typically protected by enemy frontline units.
-        # With compacted slots (no fixed columns), we model this as: cannot attack HQ
-        # while the opponent has any unit on the frontline.
-        opp = state.other(pid)
-        require(
-            all(
-                (iid is None) or (state.get_instance(iid).owner != opp)
-                for iid in state.frontline
-            ),
-            "cannot attack HQ while enemy controls frontline",
-        )
-        return
+    attacker_def = state.get_def(a.def_id)
+    require(attacker_def.card_type == CardType.UNIT, "attacker not a unit")
+    require(attacker_def.unit_class is not None, "attacker missing unit_class")
 
     require(defender is not None, "missing defender")
     assert defender is not None
     d = state.get_instance(defender)
     require(d.owner == state.other(pid), "defender must be enemy")
     require(d.zone == Zone.BOARD, "defender not on board")
-    require(d.pos is not None, "defender missing board pos")
-    # Compacting layout: no fixed columns for combat; targeting is by instance id.
+    require(d.lane is not None, "defender missing lane")
+
+    def is_adjacent_lane(
+        state: GameState, lane_a: Lane | None, lane_b: Lane | None
+    ) -> bool:
+        if lane_a == Lane.SUPPORTLINE:
+            return lane_b == Lane.FRONTLINE
+        elif lane_a == Lane.FRONTLINE:
+            return lane_b == Lane.SUPPORTLINE
+        return False
+
+    def is_guard_unit(state: GameState, iid: InstanceId) -> bool:
+        inst = state.get_instance(iid)
+        defn = state.get_def(inst.def_id)
+        return defn.abilities is not None and "GUARD" in defn.abilities
+
+    def no_guard_protected(state: GameState, defender: InstanceId) -> bool:
+        if d.lane == Lane.FRONTLINE:
+            idx = state.frontline.index(defender)
+            if (idx > 0 and is_guard_unit(state, state.frontline[idx - 1])) or (
+                idx < len(state.frontline) - 1
+                and is_guard_unit(state, state.frontline[idx + 1])
+            ):
+                return False
+        elif d.lane == Lane.SUPPORTLINE:
+            idx = state.supportline[state.other(pid)].index(defender)
+            if (
+                idx > 0
+                and is_guard_unit(state, state.supportline[state.other(pid)][idx - 1])
+            ) or (
+                idx < len(state.supportline[state.other(pid)]) - 1
+                and is_guard_unit(state, state.supportline[state.other(pid)][idx + 1])
+            ):
+                return False
+        return True
+
+    def no_fighter_protected(state: GameState, defender: InstanceId) -> bool:
+        for iid in state.frontline if d.lane == Lane.FRONTLINE else state.supportline[
+            state.other(pid)
+        ]:
+            inst = state.get_instance(iid)
+            defn = state.get_def(inst.def_id)
+            if (
+                defn.unit_class == UnitClass.FIGHTER
+                and inst.current_health is not None
+                and inst.current_health > 0
+            ):
+                return False
+        return True
+
+    uc = attacker_def.unit_class
+
+    if uc == UnitClass.INFANTRY:
+        require(
+            is_adjacent_lane(state, a.lane, d.lane),
+            "infantry can only attack adjacent lanes",
+        )
+        require(no_guard_protected(state, defender), "must attack guard unit first")
+    elif uc == UnitClass.TANK:
+        require(
+            is_adjacent_lane(state, a.lane, d.lane),
+            "tank can only attack adjacent lanes",
+        )
+        require(no_guard_protected(state, defender), "must attack guard unit first")
+    elif uc == UnitClass.ARTILLERY:
+        pass
+    elif uc == UnitClass.FIGHTER:
+        require(no_guard_protected(state, defender), "must attack guard unit first")
+    elif uc == UnitClass.BOMBER:
+        require(no_guard_protected(state, defender), "must attack guard unit first")
+        require(no_fighter_protected(state, defender), "must attack fighter unit first")

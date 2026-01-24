@@ -36,3 +36,10 @@ This is a minimal engine prototype with:
 ## Roadmap
 
 The goal is a faithful KARDS rules engine. Many mechanics are intentionally stubbed or simplified in this first prototype.
+
+
+## Test cmd
+
+```bash
+d 2 0; e; d 0 1; d 0 2; e; a 0 0; k 3 2;
+```

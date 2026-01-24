@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from .cards import AbilitySpec, CardDefinition, validate_definition
 from .resolver import Resolver, StepResult
 from .state import GameConfig, GameState, PlayerState
-from .types import CardType, PlayerId, Zone
+from .types import CardType, PlayerId, UnitClass, Zone
 
 
 @dataclass(slots=True)
@@ -34,6 +34,9 @@ class Engine:
                 card_type=CardType(row["type"]),
                 cost=row.get("cost", 0),
                 acost=row.get("acost", None),
+                unit_class=(
+                    UnitClass(row["unit_class"]) if row.get("unit_class") else None
+                ),
                 attack=row.get("attack", None),
                 health=row.get("health", None),
                 abilities=abilities,

@@ -30,7 +30,6 @@ class Attack(Action):
     player_id: PlayerId
     attacker: InstanceId
     defender: InstanceId | None = None
-    defender_hq: bool = False
 
 
 @dataclass(frozen=True, slots=True)

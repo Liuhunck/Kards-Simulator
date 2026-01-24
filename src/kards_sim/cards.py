@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .types import CardType
+from .types import CardType, UnitClass
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +26,8 @@ class CardDefinition:
     name: str
     card_type: CardType
     cost: int
-    acost: int
+    acost: int | None = None
+    unit_class: UnitClass | None = None
     attack: int | None = None
     health: int | None = None
     abilities: tuple[AbilitySpec, ...] = ()
@@ -36,12 +37,25 @@ def validate_definition(defn: CardDefinition) -> None:
     if defn.cost < 0:
         raise ValueError(f"cost must be >= 0: {defn.def_id}")
     if defn.card_type == CardType.UNIT:
+        if defn.unit_class is None:
+            raise ValueError(f"unit must have unit_class: {defn.def_id}")
         if defn.attack is None or defn.health is None:
             raise ValueError(f"unit must have attack/health: {defn.def_id}")
         if defn.attack < 0 or defn.health <= 0:
             raise ValueError(f"invalid unit stats: {defn.def_id}")
+        if defn.acost is None or defn.acost < 0:
+            raise ValueError(f"unit must have non-negative acost: {defn.def_id}")
     elif defn.card_type == CardType.ORDER:
         if defn.attack is not None or defn.health is not None:
             raise ValueError(f"order must not have attack/health: {defn.def_id}")
+        if defn.unit_class is not None:
+            raise ValueError(f"order must not have unit_class: {defn.def_id}")
     elif defn.card_type == CardType.BASE:
         pass
+    elif defn.card_type == CardType.COUNTERMEASURE:
+        if defn.attack is not None or defn.health is not None:
+            raise ValueError(
+                f"countermeasure must not have attack/health: {defn.def_id}"
+            )
+        if defn.unit_class is not None:
+            raise ValueError(f"countermeasure must not have unit_class: {defn.def_id}")
