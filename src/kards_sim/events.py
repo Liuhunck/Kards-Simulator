@@ -41,9 +41,17 @@ class UnitDeployed(Event):
 
 
 @dataclass(frozen=True, slots=True)
+class UnitAdvanced(Event):
+    player_id: PlayerId
+    unit: InstanceId
+    pos: int
+
+
+@dataclass(frozen=True, slots=True)
 class DamageDealt(Event):
     source: InstanceId | None
     target: InstanceId | None
+    target_player: PlayerId | None
     amount: int
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from .engine import Engine
 from .state import GameState
@@ -9,7 +8,8 @@ from .resolver import Resolver
 from .types import PlayerId, InstanceId
 from .actions import Attack, EndTurn, PlayCard, Advance
 
-from .abilities.registry import default_registry
+from .cards.abilities.registry import default_registry
+from .cards.samples import sample_card_registry
 
 
 def _print_state(state: GameState) -> None:
@@ -58,15 +58,13 @@ def main() -> int:
         if i + 1 < len(sys.argv):
             script = sys.argv[i + 1]
 
-    root = Path(__file__).resolve().parents[2]
-    cards_path = root / "data" / "cards.sample.json"
-    defs = Engine.load_definitions_json(cards_path)
     engine = Engine(resolver=Resolver(registry=default_registry()))
+    registry = sample_card_registry()
 
     # Sample decks (keep small for now)
     deck0 = ["UNIT_INF_1"] * 8 + ["ORDER_DMG_2"] * 4 + ["UNIT_DRAW_2"] * 2
     deck1 = ["UNIT_INF_1"] * 8 + ["ORDER_DMG_2"] * 4 + ["UNIT_DRAW_2"] * 2
-    state = Engine.new_game(defs, deck0, deck1, seed=1)
+    state = Engine.new_game(registry, deck0, deck1, seed=1)
 
     if script is not None:
         # Run a short scripted session (semicolon-separated), then exit.

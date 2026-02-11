@@ -5,26 +5,11 @@ from typing import Deque
 from collections import deque
 
 from .actions import Attack, EndTurn, PlayCard, Advance
-from .abilities.registry import AbilityRegistry, default_registry
-from .events import (
-    CardPlayed,
-    DamageDealt,
-    Event,
-    TurnEnded,
-    TurnStarted,
-    UnitDeployed,
-    UnitDestroyed,
-)
-from .rules import (
-    RuleViolation,
-    can_attack,
-    can_deploy_unit,
-    can_play_card,
-    can_advance_unit,
-    require,
-)
+from .cards.abilities.registry import AbilityRegistry, default_registry
+from .events import DamageDealt, Event, TurnEnded, TurnStarted, UnitDestroyed
+from .rules import RuleViolation, require
 from .state import GameState
-from .types import CardType, InstanceId, Lane, PlayerId, UnitClass, Zone
+from .types import InstanceId, Lane, PlayerId, Zone
 
 
 @dataclass(slots=True)
@@ -65,6 +50,11 @@ def _apply_damage_to_unit(state: GameState, unit: InstanceId, amount: int) -> No
     inst = state.get_instance(unit)
     require(inst.zone == Zone.BOARD, "damage target not on board")
     inst.damage_taken += amount
+
+
+def _apply_damage_to_player(state: GameState, pid: PlayerId, amount: int) -> None:
+    base_iid = state.players[pid].base_card_id
+    _apply_damage_to_unit(state, base_iid, amount)
 
 
 def _check_deaths(state: GameState) -> list[UnitDestroyed]:
@@ -109,141 +99,19 @@ class Resolver:
         try:
             # Translate action -> initial event(s)
             if isinstance(action, PlayCard):
-                can_play_card(state, action.player_id, action.card)
-                inst = state.get_instance(action.card)
-                defn = state.get_def(inst.def_id)
-                player = state.players[action.player_id]
-                q.append(
-                    CardPlayed(
-                        player_id=action.player_id,
-                        card=action.card,
-                        target=action.target,
-                        target_player=(
-                            state.other(action.player_id) if action.target_hq else None
-                        ),
-                    )
-                )
-
-                if defn.card_type == CardType.UNIT:
-                    require(action.index is not None, "unit requires index")
-                    assert action.index is not None
-                    can_deploy_unit(state, action.player_id, action.card, action.index)
-
-                    player.credits -= defn.cost
-                    player.hand.remove(action.card)
-                    state.supportline[action.player_id].insert(
-                        action.index, action.card
-                    )
-
-                    inst.cost = defn.acost
-                    inst.zone = Zone.BOARD
-                    inst.lane = Lane.SUPPORTLINE
-                    inst.exhausted = True
-
-                    q.append(
-                        UnitDeployed(
-                            player_id=action.player_id,
-                            unit=action.card,
-                            pos=action.index,
-                        )
-                    )
-                else:
-                    # Move order to discard
-                    inst.lane = None
-                    inst.zone = Zone.DISCARD
-                    player.credits -= defn.cost
-                    player.discard.append(action.card)
-                    player.hand.remove(action.card)
+                card = state.get_card_for_instance(action.card)
+                for ev in card.play(state, action):
+                    q.append(ev)
 
             elif isinstance(action, Advance):
-                can_advance_unit(state, action.player_id, action.card, action.index)
-                inst = state.get_instance(action.card)
-                # Move unit from supportline to frontline
-                assert inst.cost is not None
-                state.players[action.player_id].credits -= inst.cost
-                state.supportline[action.player_id].remove(action.card)
-                state.frontline.insert(action.index, action.card)
-                inst.lane = Lane.FRONTLINE
+                card = state.get_card_for_instance(action.card)
+                for ev in card.advance(state, action):
+                    q.append(ev)
 
             elif isinstance(action, Attack):
-                can_attack(
-                    state,
-                    action.player_id,
-                    action.attacker,
-                    action.defender,
-                )
-                a = state.get_instance(action.attacker)
-                a.exhausted = True
-
-                assert action.defender is not None
-                d = state.get_instance(action.defender)
-
-                a_def = state.get_def(a.def_id)
-                d_def = state.get_def(d.def_id)
-
-                def has_retaliatory_damage() -> bool:
-                    if d_def.card_type == CardType.BASE:
-                        return False
-                    if a_def.unit_class == UnitClass.ARTILLERY:
-                        return False
-                    if (
-                        a_def.unit_class == UnitClass.BOMBER
-                        and d_def.unit_class != UnitClass.FIGHTER
-                    ):
-                        return False
-                    if d_def.unit_class == UnitClass.BOMBER:
-                        return False
-                    return True
-
-                # Keyword check: ambush on the defender means defender strikes first.
-                has_ambush = any(
-                    spec.ability_id.lower() == "ambush" for spec in d_def.abilities
-                )
-
-                assert a.current_health is not None
-                assert d.current_health is not None
-                assert a.attack is not None
-                if has_ambush:
-                    assert d.attack is not None
-                    q.append(
-                        DamageDealt(
-                            source=action.defender,
-                            target=action.attacker,
-                            amount=d.attack,
-                        )
-                    )
-                    if d.attack < a.current_health:
-                        q.append(
-                            DamageDealt(
-                                source=action.attacker,
-                                target=action.defender,
-                                amount=a.attack,
-                            )
-                        )
-                elif has_retaliatory_damage():
-                    q.append(
-                        DamageDealt(
-                            source=action.attacker,
-                            target=action.defender,
-                            amount=a.attack,
-                        )
-                    )
-                    assert d.attack is not None
-                    q.append(
-                        DamageDealt(
-                            source=action.defender,
-                            target=action.attacker,
-                            amount=d.attack,
-                        )
-                    )
-                else:
-                    q.append(
-                        DamageDealt(
-                            source=action.attacker,
-                            target=action.defender,
-                            amount=a.attack,
-                        )
-                    )
+                card = state.get_card_for_instance(action.attacker)
+                for ev in card.attack(state, action):
+                    q.append(ev)
 
             elif isinstance(action, EndTurn):
                 require(action.player_id == state.active_player, "not your turn")
@@ -260,6 +128,8 @@ class Resolver:
                 if isinstance(ev, DamageDealt):
                     if ev.target is not None:
                         _apply_damage_to_unit(state, ev.target, ev.amount)
+                    elif ev.target_player is not None:
+                        _apply_damage_to_player(state, ev.target_player, ev.amount)
 
                     for d_ev in _check_deaths(state):
                         q.append(d_ev)

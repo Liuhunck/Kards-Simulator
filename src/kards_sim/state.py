@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from .cards import CardDefinition
+if TYPE_CHECKING:
+    from .cards.registry import CardCatalog
+    from .cards.definitions import CardDefinition
 from .types import BoardPos, CardType, InstanceId, Lane, PlayerId, Zone
 
 
@@ -74,7 +77,8 @@ class GameConfig:
 @dataclass(slots=True)
 class GameState:
     config: GameConfig
-    definitions: dict[str, CardDefinition]
+    definitions: dict[str, "CardDefinition"]
+    card_catalog: "CardCatalog"
     instances: dict[InstanceId, CardInstance]
     players: dict[PlayerId, PlayerState]
 
@@ -109,6 +113,12 @@ class GameState:
     def get_def(self, def_id: str) -> CardDefinition:
         return self.definitions[def_id]
 
+    def get_card(self, def_id: str):
+        return self.card_catalog.get(def_id)
+
+    def get_card_for_instance(self, iid: InstanceId):
+        return self.get_card(self.get_instance(iid).def_id)
+
     def allocate_base_instance(self, owner: PlayerId, hp: int) -> InstanceId:
         iid = InstanceId(self.next_instance_id)
         self.next_instance_id += 1
@@ -140,3 +150,41 @@ class GameState:
 
     def card_type_of(self, iid: InstanceId) -> CardType:
         return self.get_def(self.get_instance(iid).def_id).card_type
+
+    def to_observation(self) -> dict:
+        """Stable, minimal observation dict for RL integrations."""
+        return {
+            "turn": self.turn,
+            "active_player": int(self.active_player),
+            "players": {
+                int(pid): {
+                    "credits": p.credits,
+                    "max_credits": p.max_credits,
+                    "deck": [int(iid) for iid in p.deck],
+                    "hand": [int(iid) for iid in p.hand],
+                    "discard": [int(iid) for iid in p.discard],
+                    "countermeasures": [int(iid) for iid in p.countermeasures],
+                    "base": int(p.base_card_id),
+                }
+                for pid, p in self.players.items()
+            },
+            "supportline": {
+                int(pid): [int(iid) for iid in slots]
+                for pid, slots in self.supportline.items()
+            },
+            "frontline": [int(iid) for iid in self.frontline],
+            "instances": {
+                int(iid): {
+                    "def_id": inst.def_id,
+                    "owner": int(inst.owner),
+                    "zone": inst.zone.value,
+                    "lane": inst.lane.value if inst.lane else None,
+                    "cost": inst.cost,
+                    "attack": inst.attack,
+                    "max_health": inst.max_health,
+                    "current_health": inst.current_health,
+                    "exhausted": inst.exhausted,
+                }
+                for iid, inst in self.instances.items()
+            },
+        }

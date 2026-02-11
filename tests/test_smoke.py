@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from kards_sim.actions import Attack, EndTurn, PlayCard
-from kards_sim.abilities.registry import default_registry
-from kards_sim.cards import AbilitySpec, CardDefinition, validate_definition
+from kards_sim.cards.abilities.registry import default_registry
+from kards_sim.cards import AbilitySpec, CardDefinition, CardRegistry
+from kards_sim.cards.bases import BaseCardBase
+from kards_sim.cards.samples import sample_card_registry
+from kards_sim.cards.units import UnitCardBase
 from kards_sim.engine import Engine
 from kards_sim.resolver import Resolver
 from kards_sim.state import GameConfig
@@ -12,10 +13,9 @@ from kards_sim.types import CardType, Lane, PlayerId, UnitClass, Zone
 
 
 def test_smoke_can_start_and_play_unit() -> None:
-    root = Path(__file__).resolve().parents[1]
-    defs = Engine.load_definitions_json(root / "data" / "cards.sample.json")
     engine = Engine(resolver=Resolver(registry=default_registry()))
-    state = Engine.new_game(defs, ["UNIT_INF_1"] * 10, ["UNIT_INF_1"] * 10, seed=1)
+    registry = sample_card_registry()
+    state = Engine.new_game(registry, ["UNIT_INF_1"] * 10, ["UNIT_INF_1"] * 10, seed=1)
 
     ap = state.active_player
     hand0 = state.players[ap].hand[0]
@@ -34,14 +34,16 @@ def test_smoke_can_start_and_play_unit() -> None:
 
 
 def test_ambush_strikes_first_and_can_cancel_attack() -> None:
-    defs = {
-        "BASE": CardDefinition(
+    class _Base(BaseCardBase):
+        definition = CardDefinition(
             def_id="BASE",
             name="Base",
             card_type=CardType.BASE,
             cost=0,
-        ),
-        "ATK": CardDefinition(
+        )
+
+    class _Attacker(UnitCardBase):
+        definition = CardDefinition(
             def_id="ATK",
             name="Attacker",
             card_type=CardType.UNIT,
@@ -51,8 +53,10 @@ def test_ambush_strikes_first_and_can_cancel_attack() -> None:
             attack=2,
             health=1,
             abilities=(),
-        ),
-        "DEF_AMB": CardDefinition(
+        )
+
+    class _DefAmbush(UnitCardBase):
+        definition = CardDefinition(
             def_id="DEF_AMB",
             name="Defender (Ambush)",
             card_type=CardType.UNIT,
@@ -62,13 +66,15 @@ def test_ambush_strikes_first_and_can_cancel_attack() -> None:
             attack=1,
             health=2,
             abilities=(AbilitySpec("ambush"),),
-        ),
-    }
-    for d in defs.values():
-        validate_definition(d)
+        )
+
+    registry = CardRegistry()
+    registry.register_many([_Base, _Attacker, _DefAmbush])
 
     engine = Engine(resolver=Resolver(registry=default_registry()))
-    state = Engine.new_game(defs, [], [], seed=1, config=GameConfig(starting_hand=0))
+    state = Engine.new_game(
+        registry, [], [], seed=1, config=GameConfig(starting_hand=0)
+    )
 
     atk = state.allocate_instance("ATK", owner=PlayerId(0), zone=Zone.BOARD)
     dfd = state.allocate_instance("DEF_AMB", owner=PlayerId(1), zone=Zone.BOARD)

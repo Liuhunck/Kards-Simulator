@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import json
 import random
-from pathlib import Path
 from typing import Iterable
 from dataclasses import dataclass
 
-from .cards import AbilitySpec, CardDefinition, validate_definition
+from .cards import (
+    CardCatalog,
+    CardRegistry,
+)
 from .resolver import Resolver, StepResult
 from .state import GameConfig, GameState, PlayerState
-from .types import CardType, PlayerId, UnitClass, Zone
+from .types import PlayerId, Zone
 
 
 @dataclass(slots=True)
@@ -19,44 +20,19 @@ class Engine:
     resolver: Resolver
 
     @staticmethod
-    def load_definitions_json(path: str | Path) -> dict[str, CardDefinition]:
-        p = Path(path)
-        data = json.loads(p.read_text(encoding="utf-8"))
-        defs: dict[str, CardDefinition] = {}
-        for row in data["cards"]:
-            abilities = tuple(
-                AbilitySpec(ability_id=a["id"], params=dict(a.get("params", {})))
-                for a in row.get("abilities", [])
-            )
-            defn = CardDefinition(
-                def_id=row["id"],
-                name=row["name"],
-                card_type=CardType(row["type"]),
-                cost=row.get("cost", 0),
-                acost=row.get("acost", None),
-                unit_class=(
-                    UnitClass(row["unit_class"]) if row.get("unit_class") else None
-                ),
-                attack=row.get("attack", None),
-                health=row.get("health", None),
-                abilities=abilities,
-            )
-            validate_definition(defn)
-            defs[defn.def_id] = defn
-        return defs
-
-    @staticmethod
     def new_game(
-        definitions: dict[str, CardDefinition],
+        card_registry: CardRegistry,
         deck_p0: Iterable[str],
         deck_p1: Iterable[str],
         seed: int = 1,
         config: GameConfig | None = None,
     ) -> GameState:
         cfg = config or GameConfig()
+        catalog, definitions = CardCatalog.from_registry(card_registry)
         state = GameState(
             config=cfg,
             definitions=definitions,
+            card_catalog=catalog,
             instances={},
             players={},
             active_player=PlayerId(0),

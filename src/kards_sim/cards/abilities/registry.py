@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from ..cards import AbilitySpec, CardDefinition
-from ..events import CardPlayed, DamageDealt, Event, UnitDeployed
-from ..state import GameState
+from ..definitions import AbilitySpec, CardDefinition
+from ...events import CardPlayed, DamageDealt, Event, UnitDeployed
+from ...state import GameState
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,8 +63,8 @@ def default_registry() -> AbilityRegistry:
             return isinstance(ev, UnitDeployed) and int(ev.unit) == int(source_iid)
 
         def handler(state: GameState, ev: Event) -> list[Event]:
-            from ..events import CardDrawn
-            from ..resolver import enqueue_draw
+            from ...events import CardDrawn
+            from ...resolver import enqueue_draw
 
             out: list[Event] = []
             pid = state.get_instance(ev.unit).owner
@@ -83,7 +83,7 @@ def default_registry() -> AbilityRegistry:
 
     reg.register("on_deploy_draw", _on_deploy_draw)
 
-    # On play (order): deal damage to a target unit.
+    # On play (order): deal damage to a target unit or HQ.
     def _on_play_deal_damage(source_iid: int, params: dict) -> Ability:
         amount = int(params.get("amount", 1))
 
@@ -113,7 +113,7 @@ def default_registry() -> AbilityRegistry:
     reg.register("on_play_deal_damage", _on_play_deal_damage)
 
     # Keyword ability: ambush (strikes first when attacked).
-    # The actual combat ordering is handled by the resolver; this registration
+    # The actual combat ordering is handled by the unit base class; this registration
     # exists so data-driven cards can declare the ability without raising.
     def _ambush_keyword(source_iid: int, params: dict) -> Ability:
         _ = params
