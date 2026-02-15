@@ -1,49 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from .cards.registry import CardCatalog
-    from .cards.definitions import CardDefinition
-from .types import BoardPos, CardType, InstanceId, Lane, PlayerId, Zone
+from .cards.base import CardBase
+from .cards.bases import BaseCardBase
+from .types import CardType, InstanceId, Lane, PlayerId, Zone
 
 
 @dataclass(slots=True)
 class CardInstance:
     instance_id: InstanceId
-    def_id: str
+    card: CardBase
     owner: PlayerId
     zone: Zone
-    lane: Lane | None = None
-    pos: BoardPos | None = None  # not used
-
-    cost: int | None = None
-
-    base_attack: int | None = None
-    base_health: int | None = None
-
-    damage_taken: int = 0
+    lane: Lane
     exhausted: bool = True
-
-    @property
-    def attack(self) -> int | None:
-        return self.base_attack
-
-    @property
-    def max_health(self) -> int | None:
-        return self.base_health
-
-    @property
-    def current_health(self) -> int | None:
-        if self.base_health is None:
-            return None
-        return self.base_health - self.damage_taken
-
-    @property
-    def is_dead(self) -> bool:
-        h = self.current_health
-        return h is not None and h <= 0
 
 
 @dataclass(slots=True)
@@ -70,20 +41,18 @@ class PendingChoice:
 class GameConfig:
     columns: int = 5
     starting_hand: int = 4
-    starting_p0_hp: int = 20
-    starting_p1_hp: int = 20
+    starting_p0_hp: int | None = None
+    starting_p1_hp: int | None = None
 
 
 @dataclass(slots=True)
 class GameState:
     config: GameConfig
-    definitions: dict[str, "CardDefinition"]
-    card_catalog: "CardCatalog"
-    instances: dict[InstanceId, CardInstance]
     players: dict[PlayerId, PlayerState]
+    instances: dict[InstanceId, CardInstance]
 
-    supportline: dict[PlayerId, list[InstanceId]] = field(default_factory=dict)
     frontline: list[InstanceId] = field(default_factory=list)
+    supportline: dict[PlayerId, list[InstanceId]] = field(default_factory=dict)
 
     active_player: PlayerId = PlayerId(0)
     turn: int = 1
@@ -107,49 +76,97 @@ class GameState:
         out.extend(self.frontline)
         return out
 
+    def all_board_card_ids(self) -> list[InstanceId]:
+        out = self.all_board_unit_ids()
+        for p in self.players.values():
+            out.append(p.base_card_id)
+        return out
+
     def get_instance(self, iid: InstanceId) -> CardInstance:
         return self.instances[iid]
 
-    def get_def(self, def_id: str) -> CardDefinition:
-        return self.definitions[def_id]
+    def get_attack(self, iid: InstanceId) -> int | None:
+        card = self.get_card_for_instance(iid)
+        return getattr(card, "attack_value", None)
 
-    def get_card(self, def_id: str):
-        return self.card_catalog.get(def_id)
+    def get_max_health(self, iid: InstanceId) -> int | None:
+        card = self.get_card_for_instance(iid)
+        return getattr(card, "health_value", None)
+
+    def get_damage_taken(self, iid: InstanceId) -> int:
+        card = self.get_card_for_instance(iid)
+        current_health = getattr(card, "current_health", None)
+        max_health = getattr(card, "health_value", None)
+        if current_health is None or max_health is None:
+            return 0
+        return max(0, int(max_health) - int(current_health))
+
+    def get_current_health(self, iid: InstanceId) -> int | None:
+        card = self.get_card_for_instance(iid)
+        current = getattr(card, "current_health", None)
+        if current is not None:
+            return int(current)
+        return getattr(card, "health_value", None)
+
+    def is_dead(self, iid: InstanceId) -> bool:
+        health = self.get_current_health(iid)
+        return health is not None and health <= 0
+
+    def get_action_cost(self, iid: InstanceId) -> int | None:
+        card = self.get_card_for_instance(iid)
+        return getattr(card, "acost", None)
+
+    def set_action_cost(self, iid: InstanceId, value: int) -> None:
+        card = self.get_card_for_instance(iid)
+        card.acost = int(value)
+
+    def apply_damage(self, iid: InstanceId, amount: int) -> None:
+        card = self.get_card_for_instance(iid)
+        card.health_value -= int(amount)
 
     def get_card_for_instance(self, iid: InstanceId):
-        return self.get_card(self.get_instance(iid).def_id)
+        return self.instances[iid].card
 
-    def allocate_base_instance(self, owner: PlayerId, hp: int) -> InstanceId:
-        iid = InstanceId(self.next_instance_id)
+    def get_next_iid(self) -> InstanceId:
+        out = self.next_instance_id
         self.next_instance_id += 1
-        inst = CardInstance(
+        return InstanceId(out)
+
+    def allocate_base_instance(
+        self,
+        base_card_cls: type["BaseCardBase"],
+        owner: PlayerId,
+        hp: int | None = None,
+    ) -> InstanceId:
+        iid = self.get_next_iid()
+        card_obj = base_card_cls()
+        if hp is not None:
+            card_obj.health_value = int(hp)
+        self.instances[iid] = CardInstance(
             instance_id=iid,
-            def_id="BASE",
+            card=card_obj,
             owner=owner,
             zone=Zone.BOARD,
-            base_health=hp,
+            lane=Lane.SUPPORTLINE,
         )
-        inst.lane = Lane.SUPPORTLINE
-        self.instances[iid] = inst
         return iid
 
-    def allocate_instance(self, def_id: str, owner: PlayerId, zone: Zone) -> InstanceId:
-        iid = InstanceId(self.next_instance_id)
-        self.next_instance_id += 1
-        defn = self.get_def(def_id)
-        inst = CardInstance(
+    def allocate_instance(
+        self, card_cls: type["CardBase"], owner: PlayerId
+    ) -> InstanceId:
+        iid = self.get_next_iid()
+        card_obj = card_cls()
+        self.instances[iid] = CardInstance(
             instance_id=iid,
-            def_id=def_id,
+            card=card_obj,
             owner=owner,
-            zone=zone,
-            base_attack=defn.attack,
-            base_health=defn.health,
+            zone=Zone.DECK,
+            lane=Lane.NOT_ON_BOARD,
         )
-        self.instances[iid] = inst
         return iid
 
     def card_type_of(self, iid: InstanceId) -> CardType:
-        return self.get_def(self.get_instance(iid).def_id).card_type
+        return self.instances[iid].card.card_type
 
     def to_observation(self) -> dict:
         """Stable, minimal observation dict for RL integrations."""
@@ -175,14 +192,14 @@ class GameState:
             "frontline": [int(iid) for iid in self.frontline],
             "instances": {
                 int(iid): {
-                    "def_id": inst.def_id,
+                    "card_class": inst.card.__class__.__name__,
                     "owner": int(inst.owner),
                     "zone": inst.zone.value,
                     "lane": inst.lane.value if inst.lane else None,
-                    "cost": inst.cost,
-                    "attack": inst.attack,
-                    "max_health": inst.max_health,
-                    "current_health": inst.current_health,
+                    "cost": self.get_action_cost(iid),
+                    "attack": self.get_attack(iid),
+                    "max_health": self.get_max_health(iid),
+                    "current_health": self.get_current_health(iid),
                     "exhausted": inst.exhausted,
                 }
                 for iid, inst in self.instances.items()

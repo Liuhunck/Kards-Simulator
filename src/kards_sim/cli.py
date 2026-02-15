@@ -9,19 +9,20 @@ from .types import PlayerId, InstanceId
 from .actions import Attack, EndTurn, PlayCard, Advance
 
 from .cards.abilities.registry import default_registry
-from .cards.samples import sample_card_registry
+from .cards.bases import GermanyHeadquarters, SovietHeadquarters
+from .cards.units.infantry import Infantry, RadioTeam
+from .cards.orders import ArtilleryStrike
 
 
 def _print_state(state: GameState) -> None:
     p0 = state.players[PlayerId(0)]
     p1 = state.players[PlayerId(1)]
-    hp_p0 = state.get_instance(p0.base_card_id).current_health
-    hp_p1 = state.get_instance(p1.base_card_id).current_health
+    hp_p0 = state.get_current_health(p0.base_card_id)
+    hp_p1 = state.get_current_health(p1.base_card_id)
     print(f"Turn {state.turn} | Active: P{int(state.active_player)}")
 
     def fmt_unit(iid: InstanceId) -> str:
-        inst = state.get_instance(iid)
-        name = state.get_def(inst.def_id).name
+        name = state.get_card_for_instance(iid).name
         return name
 
     def render_supportline(pid: PlayerId) -> str:
@@ -59,12 +60,15 @@ def main() -> int:
             script = sys.argv[i + 1]
 
     engine = Engine(resolver=Resolver(registry=default_registry()))
-    registry = sample_card_registry()
 
     # Sample decks (keep small for now)
-    deck0 = ["UNIT_INF_1"] * 8 + ["ORDER_DMG_2"] * 4 + ["UNIT_DRAW_2"] * 2
-    deck1 = ["UNIT_INF_1"] * 8 + ["ORDER_DMG_2"] * 4 + ["UNIT_DRAW_2"] * 2
-    state = Engine.new_game(registry, deck0, deck1, seed=1)
+    deck0 = [GermanyHeadquarters] + [Infantry] * 8 + [ArtilleryStrike] * 4 + [RadioTeam] * 2
+    deck1 = [SovietHeadquarters] + [Infantry] * 8 + [ArtilleryStrike] * 4 + [RadioTeam] * 2
+    state = Engine.new_game(
+        deck0,
+        deck1,
+        seed=1,
+    )
 
     if script is not None:
         # Run a short scripted session (semicolon-separated), then exit.
@@ -105,7 +109,7 @@ def main() -> int:
 
         if cmd[0] == "hand" or cmd[0] == "h":
             for idx, iid in enumerate(player.hand):
-                d = state.get_def(state.get_instance(iid).def_id)
+                d = state.get_card_for_instance(iid)
                 print(
                     f"[{idx}] iid={int(iid)} {d.name} ({d.card_type.value}) cost={d.cost}"
                 )

@@ -25,14 +25,16 @@ def can_play_card(state: GameState, pid: PlayerId, iid: InstanceId) -> None:
     require(iid in player.hand, "card not in hand")
     inst = state.get_instance(iid)
     require(inst.owner == pid, "not your card")
-    defn = state.get_def(inst.def_id)
-    require(player.credits >= defn.cost, "not enough credits")
+    card = state.get_card_for_instance(iid)
+    card_cost = getattr(card, "cost", None)
+    require(card_cost is not None, "card missing cost")
+    require(player.credits >= int(card_cost), "not enough credits")
 
 
 def can_deploy_unit(state: GameState, pid: PlayerId, iid: InstanceId, pos: int) -> None:
-    inst = state.get_instance(iid)
-    defn = state.get_def(inst.def_id)
-    require(defn.card_type == CardType.UNIT, "not a unit")
+    _ = state.get_instance(iid)
+    card = state.get_card_for_instance(iid)
+    require(card.card_type == CardType.UNIT, "not a unit")
     require(len(state.supportline[pid]) < state.config.columns, "supportline is full")
     require(
         0 <= pos <= len(state.supportline[pid]),
@@ -61,10 +63,12 @@ def can_advance_unit(
         0 <= pos <= len(state.frontline),
         "index out of frontline range",
     )
-    if inst.cost is not None:
-        require(state.players[pid].credits >= inst.cost, "not enough credits")
+    action_cost = state.get_action_cost(iid)
+    if action_cost is not None:
+        require(state.players[pid].credits >= action_cost, "not enough credits")
     require(state.supportline[pid].count(iid) == 1, "unit not in your supportline")
-    require(inst.current_health is not None and inst.current_health > 0, "unit dead")
+    current_health = state.get_current_health(iid)
+    require(current_health is not None and current_health > 0, "unit dead")
 
 
 def can_attack(
@@ -81,11 +85,12 @@ def can_attack(
     # require(a.pos is not None, "attacker missing board pos")
     require(not a.exhausted, "attacker exhausted")
     require(state.card_type_of(attacker) == CardType.UNIT, "attacker not a unit")
-    require(a.current_health is not None and a.current_health > 0, "attacker dead")
+    a_health = state.get_current_health(attacker)
+    require(a_health is not None and a_health > 0, "attacker dead")
 
-    attacker_def = state.get_def(a.def_id)
-    require(attacker_def.card_type == CardType.UNIT, "attacker not a unit")
-    require(attacker_def.unit_class is not None, "attacker missing unit_class")
+    attacker_card = state.get_card_for_instance(attacker)
+    require(attacker_card.card_type == CardType.UNIT, "attacker not a unit")
+    require(attacker_card.unit_class is not None, "attacker missing unit_class")
 
     require(defender is not None, "missing defender")
     assert defender is not None
@@ -104,9 +109,9 @@ def can_attack(
         return False
 
     def is_guard_unit(state: GameState, iid: InstanceId) -> bool:
-        inst = state.get_instance(iid)
-        defn = state.get_def(inst.def_id)
-        return defn.abilities is not None and "GUARD" in defn.abilities
+        _ = state.get_instance(iid)
+        card = state.get_card_for_instance(iid)
+        return card.abilities is not None and "GUARD" in card.abilities
 
     def no_guard_protected(state: GameState, defender: InstanceId) -> bool:
         if d.lane == Lane.FRONTLINE:
@@ -129,20 +134,22 @@ def can_attack(
         return True
 
     def no_fighter_protected(state: GameState, defender: InstanceId) -> bool:
-        for iid in state.frontline if d.lane == Lane.FRONTLINE else state.supportline[
-            state.other(pid)
-        ]:
+        for iid in (
+            state.frontline
+            if d.lane == Lane.FRONTLINE
+            else state.supportline[state.other(pid)]
+        ):
             inst = state.get_instance(iid)
-            defn = state.get_def(inst.def_id)
+            card = state.get_card_for_instance(iid)
             if (
-                defn.unit_class == UnitClass.FIGHTER
-                and inst.current_health is not None
-                and inst.current_health > 0
+                card.unit_class == UnitClass.FIGHTER
+                and state.get_current_health(iid) is not None
+                and state.get_current_health(iid) > 0
             ):
                 return False
         return True
 
-    uc = attacker_def.unit_class
+    uc = attacker_card.unit_class
 
     if uc == UnitClass.INFANTRY:
         require(

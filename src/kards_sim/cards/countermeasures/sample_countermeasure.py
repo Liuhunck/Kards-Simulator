@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from ..definitions import CardDefinition
 from ..countermeasures.base import CountermeasureCardBase
-from ...types import CardType
+from ...types import CardType, Nation
 
 
 class SampleCountermeasure(CountermeasureCardBase):
-    definition = CardDefinition(
-        def_id="CM_SAMPLE",
-        name="Countermeasure (Sample)",
-        card_type=CardType.COUNTERMEASURE,
-        cost=1,
-        abilities=(),
-    )
+    name = "Countermeasure (Sample)"
+    card_type = CardType.COUNTERMEASURE
+    nation = Nation.NEUTRAL
+    cost = 1
+    abilities = ()

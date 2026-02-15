@@ -21,20 +21,31 @@ if TYPE_CHECKING:
 class UnitCardBase(CardBase):
     """Shared behavior for unit cards."""
 
-    def play(self, state: GameState, action: PlayCard) -> list:
-        can_play_card(state, action.player_id, action.card)
+    card_type = CardType.UNIT
+    cost: int
+    acost: int
+    unit_class: UnitClass
+    attack_value: int
+    health_value: int
+
+    def deploy(self, state: GameState, action: PlayCard) -> list:
+        iid = action.card
+        can_play_card(state, action.player_id, iid)
         require(action.index is not None, "unit requires index")
         assert action.index is not None
-        can_deploy_unit(state, action.player_id, action.card, action.index)
+        can_deploy_unit(state, action.player_id, iid, action.index)
 
-        inst = state.get_instance(action.card)
+        inst = state.get_instance(iid)
         player = state.players[action.player_id]
+        card = state.get_card_for_instance(iid)
+        require(getattr(card, "cost", None) is not None, "unit missing cost")
+        require(getattr(card, "acost", None) is not None, "unit missing acost")
 
-        player.credits -= self.definition.cost
-        player.hand.remove(action.card)
-        state.supportline[action.player_id].insert(action.index, action.card)
+        player.credits -= int(card.cost)
+        player.hand.remove(iid)
+        state.supportline[action.player_id].insert(action.index, iid)
 
-        inst.cost = self.definition.acost
+        state.set_action_cost(iid, int(card.acost))
         inst.zone = Zone.BOARD
         inst.lane = Lane.SUPPORTLINE
         inst.exhausted = True
@@ -42,7 +53,7 @@ class UnitCardBase(CardBase):
         return [
             CardPlayed(
                 player_id=action.player_id,
-                card=action.card,
+                card=iid,
                 target=action.target,
                 target_player=(
                     state.other(action.player_id) if action.target_hq else None
@@ -50,108 +61,116 @@ class UnitCardBase(CardBase):
             ),
             UnitDeployed(
                 player_id=action.player_id,
-                unit=action.card,
+                unit=iid,
                 pos=action.index,
             ),
         ]
 
     def advance(self, state: GameState, action: Advance) -> list:
-        can_advance_unit(state, action.player_id, action.card, action.index)
-        inst = state.get_instance(action.card)
-        assert inst.cost is not None
+        iid = action.card
+        can_advance_unit(state, action.player_id, iid, action.index)
+        inst = state.get_instance(iid)
+        action_cost = state.get_action_cost(iid)
+        assert action_cost is not None
 
-        state.players[action.player_id].credits -= inst.cost
-        state.supportline[action.player_id].remove(action.card)
-        state.frontline.insert(action.index, action.card)
+        state.players[action.player_id].credits -= action_cost
+        state.supportline[action.player_id].remove(iid)
+        state.frontline.insert(action.index, iid)
         inst.lane = Lane.FRONTLINE
 
         return [
             UnitAdvanced(
                 player_id=action.player_id,
-                unit=action.card,
+                unit=iid,
                 pos=action.index,
             )
         ]
 
     def attack(self, state: GameState, action: Attack) -> list:
-        can_attack(state, action.player_id, action.attacker, action.defender)
+        iid = action.attacker
+        can_attack(state, action.player_id, iid, action.defender)
 
-        a = state.get_instance(action.attacker)
+        a = state.get_instance(iid)
         a.exhausted = True
 
         assert action.defender is not None
         d = state.get_instance(action.defender)
 
-        a_def = state.get_def(a.def_id)
-        d_def = state.get_def(d.def_id)
+        a_card = state.get_card_for_instance(iid)
+        d_card = state.get_card_for_instance(action.defender)
 
         def has_retaliatory_damage() -> bool:
-            if d_def.card_type == CardType.BASE:
+            if d_card.card_type == CardType.BASE:
                 return False
-            if a_def.unit_class == UnitClass.ARTILLERY:
+            if a_card.unit_class == UnitClass.ARTILLERY:
                 return False
             if (
-                a_def.unit_class == UnitClass.BOMBER
-                and d_def.unit_class != UnitClass.FIGHTER
+                a_card.unit_class == UnitClass.BOMBER
+                and d_card.unit_class != UnitClass.FIGHTER
             ):
                 return False
-            if d_def.unit_class == UnitClass.BOMBER:
+            if d_card.unit_class == UnitClass.BOMBER:
                 return False
             return True
 
         # Keyword check: ambush on the defender means defender strikes first.
         has_ambush = any(
-            spec.ability_id.lower() == "ambush" for spec in d_def.abilities
+            spec.ability_id.lower() == "ambush" for spec in d_card.abilities
         )
 
-        assert a.current_health is not None
-        assert d.current_health is not None
-        assert a.attack is not None
+        a_current_health = state.get_current_health(iid)
+        d_current_health = state.get_current_health(action.defender)
+        a_attack = state.get_attack(iid)
+        d_attack = state.get_attack(action.defender)
+
+        assert a_current_health is not None
+        assert d_current_health is not None
+        assert a_attack is not None
 
         out: list = []
         if has_ambush:
-            assert d.attack is not None
+            assert d_attack is not None
             out.append(
                 DamageDealt(
                     source=action.defender,
-                    target=action.attacker,
-                    amount=d.attack,
+                    target=iid,
+                    amount=d_attack,
                     target_player=None,
                 )
             )
-            if d.attack < a.current_health:
+            if d_attack < a_current_health:
                 out.append(
                     DamageDealt(
-                        source=action.attacker,
+                        source=iid,
                         target=action.defender,
-                        amount=a.attack,
+                        amount=a_attack,
                         target_player=None,
                     )
                 )
         elif has_retaliatory_damage():
             out.append(
                 DamageDealt(
-                    source=action.attacker,
+                    source=iid,
                     target=action.defender,
-                    amount=a.attack,
+                    amount=a_attack,
                     target_player=None,
                 )
             )
-            assert d.attack is not None
+            assert d_attack is not None
             out.append(
                 DamageDealt(
                     source=action.defender,
-                    target=action.attacker,
-                    amount=d.attack,
+                    target=iid,
+                    amount=d_attack,
                     target_player=None,
                 )
             )
         else:
             out.append(
                 DamageDealt(
-                    source=action.attacker,
+                    source=iid,
                     target=action.defender,
-                    amount=a.attack,
+                    amount=a_attack,
                     target_player=None,
                 )
             )

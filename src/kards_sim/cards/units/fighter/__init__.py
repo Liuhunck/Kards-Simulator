@@ -1,3 +1,4 @@
-from .fighter import Fighter
+from .base import FighterBase
+from .neutral import Fighter, NeutralFighterBase
 
-__all__ = ["Fighter"]
+__all__ = ["FighterBase", "NeutralFighterBase", "Fighter"]

@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import random
-from typing import Iterable
+from typing import Sequence
 from dataclasses import dataclass
 
-from .cards import (
-    CardCatalog,
-    CardRegistry,
-)
+from .types import PlayerId
+from .cards import CardBase, BaseCardBase
 from .resolver import Resolver, StepResult
 from .state import GameConfig, GameState, PlayerState
-from .types import PlayerId, Zone
 
 
 @dataclass(slots=True)
@@ -21,18 +18,30 @@ class Engine:
 
     @staticmethod
     def new_game(
-        card_registry: CardRegistry,
-        deck_p0: Iterable[str],
-        deck_p1: Iterable[str],
+        deck_p0: Sequence[type[CardBase]],
+        deck_p1: Sequence[type[CardBase]],
         seed: int = 1,
         config: GameConfig | None = None,
     ) -> GameState:
         cfg = config or GameConfig()
-        catalog, definitions = CardCatalog.from_registry(card_registry)
+
+        if len(deck_p0) == 0:
+            raise ValueError("player 0 deck is empty")
+        if len(deck_p1) == 0:
+            raise ValueError("player 1 deck is empty")
+
+        base_p0_cls = deck_p0[0]
+        base_p1_cls = deck_p1[0]
+        deck_p0 = deck_p0[1:]
+        deck_p1 = deck_p1[1:]
+
+        if not issubclass(base_p0_cls, BaseCardBase):
+            raise ValueError(f"hq_p0 must be base card class: {base_p0_cls.__name__}")
+        if not issubclass(base_p1_cls, BaseCardBase):
+            raise ValueError(f"hq_p1 must be base card class: {base_p1_cls.__name__}")
+
         state = GameState(
             config=cfg,
-            definitions=definitions,
-            card_catalog=catalog,
             instances={},
             players={},
             active_player=PlayerId(0),
@@ -43,10 +52,14 @@ class Engine:
 
         # Allocate base instances
         play0_base_iid = state.allocate_base_instance(
-            owner=PlayerId(0), hp=cfg.starting_p0_hp
+            base_card_cls=base_p0_cls,
+            owner=PlayerId(0),
+            hp=cfg.starting_p0_hp,
         )
         play1_base_iid = state.allocate_base_instance(
-            owner=PlayerId(1), hp=cfg.starting_p1_hp
+            base_card_cls=base_p1_cls,
+            owner=PlayerId(1),
+            hp=cfg.starting_p1_hp,
         )
 
         # Initialize players
@@ -61,8 +74,8 @@ class Engine:
 
         # Allocate deck instances
         for pid, deck in ((PlayerId(0), deck_p0), (PlayerId(1), deck_p1)):
-            for def_id in deck:
-                iid = state.allocate_instance(def_id, owner=pid, zone=Zone.DECK)
+            for card_cls in deck:
+                iid = state.allocate_instance(card_cls, owner=pid)
                 state.players[pid].deck.append(iid)
 
         # Shuffle decks

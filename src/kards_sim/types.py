@@ -24,9 +24,23 @@ class UnitClass(str, Enum):
     BOMBER = "bomber"
 
 
+class Nation(str, Enum):
+    USA = "usa"
+    GERMANY = "germany"
+    SOVIET = "soviet"
+    JAPAN = "japan"
+    BRITAIN = "britain"
+    FRANCE = "france"
+    ITALY = "italy"
+    POLAND = "poland"
+    FINLAND = "finland"
+    NEUTRAL = "neutral"
+
+
 class Lane(str, Enum):
     FRONTLINE = "frontline"
     SUPPORTLINE = "supportline"
+    NOT_ON_BOARD = "not_on_board"
 
 
 class Zone(str, Enum):
@@ -34,7 +48,6 @@ class Zone(str, Enum):
     HAND = "hand"
     DISCARD = "discard"
     BOARD = "board"
-    HQ = "hq"
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,7 +1,6 @@
-from .definitions import AbilitySpec, CardDefinition, validate_definition
+from .specs import AbilitySpec, validate_card_class
 from .base import CardBase
-from .registry import CardCatalog, CardRegistry
-from .samples import sample_card_registry
+from .samples import sample_card_classes
 from .units import UnitCardBase
 from .orders import OrderCardBase
 from .countermeasures import CountermeasureCardBase
@@ -9,12 +8,9 @@ from .bases import BaseCardBase
 
 __all__ = [
     "AbilitySpec",
-    "CardDefinition",
-    "validate_definition",
+    "validate_card_class",
     "CardBase",
-    "CardCatalog",
-    "CardRegistry",
-    "sample_card_registry",
+    "sample_card_classes",
     "UnitCardBase",
     "OrderCardBase",
     "CountermeasureCardBase",

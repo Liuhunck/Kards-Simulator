@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from ..definitions import AbilitySpec, CardDefinition
+from ..base import CardBase
+from ..specs import AbilitySpec
 from ...events import CardPlayed, DamageDealt, Event, UnitDeployed
 from ...state import GameState
 
@@ -33,10 +34,10 @@ class AbilityRegistry:
         self._factories[ability_id] = factory
 
     def instantiate_for_card(
-        self, source_iid: int, card_def: CardDefinition
+        self, source_iid: int, card_cls: type[CardBase]
     ) -> list[Ability]:
         abilities: list[Ability] = []
-        for spec in card_def.abilities:
+        for spec in card_cls.abilities:
             abilities.append(self.instantiate(source_iid, spec))
         return abilities
 

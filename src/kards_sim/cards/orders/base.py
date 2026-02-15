@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from ...actions import PlayCard
 from ...events import CardPlayed
-from ...rules import can_play_card
+from ...rules import can_play_card, require
 from ...types import Zone
 from ..base import CardBase
 
@@ -15,22 +15,26 @@ if TYPE_CHECKING:
 class OrderCardBase(CardBase):
     """Shared behavior for order cards."""
 
-    def play(self, state: GameState, action: PlayCard) -> list:
-        can_play_card(state, action.player_id, action.card)
+    cost: int
 
-        inst = state.get_instance(action.card)
+    def deploy(self, state: GameState, action: PlayCard) -> list:
+        iid = action.card
+        can_play_card(state, action.player_id, iid)
+
+        inst = state.get_instance(iid)
         player = state.players[action.player_id]
+        require(getattr(self, "cost", None) is not None, "order missing cost")
 
         inst.lane = None
         inst.zone = Zone.DISCARD
-        player.credits -= self.definition.cost
-        player.discard.append(action.card)
-        player.hand.remove(action.card)
+        player.credits -= int(self.cost)
+        player.discard.append(iid)
+        player.hand.remove(iid)
 
         return [
             CardPlayed(
                 player_id=action.player_id,
-                card=action.card,
+                card=iid,
                 target=action.target,
                 target_player=(
                     state.other(action.player_id) if action.target_hq else None
