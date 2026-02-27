@@ -1,0 +1,83 @@
+# ============================================================
+# Kards 卡牌定义模板
+# 填写完成后交给 AI，会自动生成对应的 Python 卡牌类
+# ============================================================
+
+# ---------- 基本信息 ----------
+name: "豹式坦克G型"                # 卡牌名称，例如 "第1步兵团"
+nation: "germany"              # 所属国家: germany / soviet / usa / britain / japan / france / italy / poland / finland / neutral
+card_type: "unit"           # 卡牌类型: unit / order / countermeasure
+
+# ---------- 单位属性 (仅 card_type 为 unit 时填写) ----------
+unit_class: "tank"          # 兵种: infantry / tank / artillery / fighter / bomber
+cost: 5                 # 部署费用 (Kredits)
+operation_cost: 3       # 行动费用 (移动/攻击需要的 Kredits)
+attack: 6               # 攻击力
+health: 5               # 生命值
+
+# ---------- 命令属性 (仅 card_type 为 order 时填写) ----------
+# cost: 0               # 使用费用 (Kredits)
+
+# ---------- 反制属性 (仅 card_type 为 countermeasure 时填写) ----------
+# cost: 0               # 设置费用 (Kredits)
+
+# ---------- 关键词 (通用能力，由引擎自动处理) ----------
+# 从以下列表中选择，可多选，留空表示无关键词
+# - guard          : 守护 — 相邻的非守护单位不能被攻击（轰炸机和火炮除外）
+# - blitz          : 闪击 — 部署当回合即可行动（移动/攻击）
+# - fury           : 狂怒 — 每回合可攻击两次
+# - ambush         : 伏击 — 被攻击时先手反击，若击杀攻击者则不受伤害
+# - smokescreen    : 烟幕 — 在移动或攻击之前不能被敌方单位攻击
+# - mobilize       : 动员 — 每回合开始时+1/+1，受到伤害后失去此能力
+# - long_range     : 远程 — 无视战线邻接限制
+# - resistance     : 抵抗 — 受到命令卡伤害减1
+# - pincer         : 钳击 — 部署时选择一个友方单位，两者获得共同增益
+keywords: []
+
+# ---------- 重甲 (带等级的关键词，单独设置) ----------
+# 填写 1 / 2 / 3，表示重甲等级，0 表示无重甲
+# 重甲N — 受到的单位伤害减少N点
+heavy_armor: 1
+
+# ---------- 卡牌专属能力 ----------
+# 在这里用自然语言描述该卡牌独有的能力
+# 可以写多条，每条包含：触发时机、条件（可选）、效果
+#
+# 触发时机参考:
+#   on_deploy       — 当此卡部署时
+#   on_play         — 当此卡被打出时（命令/反制）
+#   on_destroy      — 当此卡被摧毁时
+#   on_advance      — 当此卡推进到前线时
+#   on_turn_start   — 回合开始时（在场时）
+#   on_turn_end     — 回合结束时（在场时）
+#   before_attack   — 攻击前
+#   after_attack    — 攻击后
+#   on_take_damage  — 受到伤害时
+#   on_deal_damage  — 造成伤害时
+#   on_any_deploy   — 任意单位被部署时（全局反应）
+#   on_any_destroy  — 任意单位被摧毁时（全局反应）
+#   on_any_play     — 任意卡牌被打出时（全局反应）
+#
+# 示例:
+#   abilities:
+#     - trigger: on_deploy
+#       description: "部署时抽1张牌"
+#
+#     - trigger: on_deploy
+#       condition: "场上有友方步兵单位"
+#       description: "行动费用减少1（最低为0）"
+#
+#     - trigger: on_play
+#       description: "对一个目标单位或敌方HQ造成2点伤害"
+#
+#     - trigger: on_turn_start
+#       description: "使相邻的友方地面单位攻击力+2"
+#
+#     - trigger: on_any_deploy
+#       condition: "部署的是敌方单位"
+#       description: "对该单位造成1点伤害"
+
+abilities: []
+
+# ---------- 备注 / 卡牌描述 ----------
+description: "无法被敌方指令指向"

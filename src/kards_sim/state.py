@@ -1,26 +1,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from .cards.base import CardBase
-from .cards.bases import BaseCardBase
-from .types import CardType, InstanceId, Lane, PlayerId, Zone
+from .types import CardType, InstanceId, Keyword, Lane, PlayerId, UnitClass, Zone
+
+if TYPE_CHECKING:
+    from .cards.base import CardBase
 
 
 @dataclass(slots=True)
 class CardInstance:
-    instance_id: InstanceId
+    """Runtime state for a single card on the table.
+
+    The *card* reference points to the immutable card definition (class
+    instance).  All mutable per-game state lives here so that the card
+    template itself is never modified.
+    """
+
+    iid: InstanceId
     card: CardBase
     owner: PlayerId
     zone: Zone
     lane: Lane
+
+    current_health: int = 0
+    current_attack: int = 0
+    operation_cost: int = 0
+
     exhausted: bool = True
+
+    attacks_this_turn: int = 0
+    smokescreen_active: bool = False
+    ambush_available: bool = True
+    mobilize_active: bool = True
 
 
 @dataclass(slots=True)
 class PlayerState:
     player_id: PlayerId
-    base_card_id: InstanceId
+    hq_iid: InstanceId
     credits: int = 0
     max_credits: int = 0
 
@@ -60,148 +79,154 @@ class GameState:
 
     next_instance_id: int = 1
     pending_choice: PendingChoice | None = None
+    game_over: bool = False
+    winner: PlayerId | None = None
 
-    def other(self, pid: PlayerId) -> PlayerId:
+    # ---- helpers ---------------------------------------------------------
+
+    def opponent(self, pid: PlayerId) -> PlayerId:
         return PlayerId(1) if pid == PlayerId(0) else PlayerId(0)
 
     def frontline_owner(self) -> PlayerId | None:
-        if len(self.frontline) == 0:
+        if not self.frontline:
             return None
-        return self.get_instance(self.frontline[0]).owner
+        return self.inst(self.frontline[0]).owner
 
-    def all_board_unit_ids(self) -> list[InstanceId]:
-        out: list[InstanceId] = []
-        for _, slots in self.supportline.items():
-            out.extend(slots)
-        out.extend(self.frontline)
-        return out
+    # ---- instance access -------------------------------------------------
 
-    def all_board_card_ids(self) -> list[InstanceId]:
-        out = self.all_board_unit_ids()
-        for p in self.players.values():
-            out.append(p.base_card_id)
-        return out
-
-    def get_instance(self, iid: InstanceId) -> CardInstance:
+    def inst(self, iid: InstanceId) -> CardInstance:
         return self.instances[iid]
 
-    def get_attack(self, iid: InstanceId) -> int | None:
-        card = self.get_card_for_instance(iid)
-        return getattr(card, "attack_value", None)
-
-    def get_max_health(self, iid: InstanceId) -> int | None:
-        card = self.get_card_for_instance(iid)
-        return getattr(card, "health_value", None)
-
-    def get_damage_taken(self, iid: InstanceId) -> int:
-        card = self.get_card_for_instance(iid)
-        current_health = getattr(card, "current_health", None)
-        max_health = getattr(card, "health_value", None)
-        if current_health is None or max_health is None:
-            return 0
-        return max(0, int(max_health) - int(current_health))
-
-    def get_current_health(self, iid: InstanceId) -> int | None:
-        card = self.get_card_for_instance(iid)
-        current = getattr(card, "current_health", None)
-        if current is not None:
-            return int(current)
-        return getattr(card, "health_value", None)
-
-    def is_dead(self, iid: InstanceId) -> bool:
-        health = self.get_current_health(iid)
-        return health is not None and health <= 0
-
-    def get_action_cost(self, iid: InstanceId) -> int | None:
-        card = self.get_card_for_instance(iid)
-        return getattr(card, "acost", None)
-
-    def set_action_cost(self, iid: InstanceId, value: int) -> None:
-        card = self.get_card_for_instance(iid)
-        card.acost = int(value)
-
-    def apply_damage(self, iid: InstanceId, amount: int) -> None:
-        card = self.get_card_for_instance(iid)
-        card.health_value -= int(amount)
-
-    def get_card_for_instance(self, iid: InstanceId):
+    def card(self, iid: InstanceId) -> CardBase:
         return self.instances[iid].card
-
-    def get_next_iid(self) -> InstanceId:
-        out = self.next_instance_id
-        self.next_instance_id += 1
-        return InstanceId(out)
-
-    def allocate_base_instance(
-        self,
-        base_card_cls: type["BaseCardBase"],
-        owner: PlayerId,
-        hp: int | None = None,
-    ) -> InstanceId:
-        iid = self.get_next_iid()
-        card_obj = base_card_cls()
-        if hp is not None:
-            card_obj.health_value = int(hp)
-        self.instances[iid] = CardInstance(
-            instance_id=iid,
-            card=card_obj,
-            owner=owner,
-            zone=Zone.BOARD,
-            lane=Lane.SUPPORTLINE,
-        )
-        return iid
-
-    def allocate_instance(
-        self, card_cls: type["CardBase"], owner: PlayerId
-    ) -> InstanceId:
-        iid = self.get_next_iid()
-        card_obj = card_cls()
-        self.instances[iid] = CardInstance(
-            instance_id=iid,
-            card=card_obj,
-            owner=owner,
-            zone=Zone.DECK,
-            lane=Lane.NOT_ON_BOARD,
-        )
-        return iid
 
     def card_type_of(self, iid: InstanceId) -> CardType:
         return self.instances[iid].card.card_type
 
+    # ---- board queries ---------------------------------------------------
+
+    def board_unit_iids(self) -> list[InstanceId]:
+        out: list[InstanceId] = []
+        for slots in self.supportline.values():
+            out.extend(slots)
+        out.extend(self.frontline)
+        return out
+
+    def board_all_iids(self) -> list[InstanceId]:
+        out = self.board_unit_iids()
+        for p in self.players.values():
+            out.append(p.hq_iid)
+        return out
+
+    def friendly_board_iids(self, pid: PlayerId) -> list[InstanceId]:
+        out: list[InstanceId] = []
+        for iid in self.board_unit_iids():
+            if self.inst(iid).owner == pid:
+                out.append(iid)
+        return out
+
+    def enemy_board_iids(self, pid: PlayerId) -> list[InstanceId]:
+        return self.friendly_board_iids(self.opponent(pid))
+
+    def has_keyword(self, iid: InstanceId, kw: Keyword) -> bool:
+        if kw is Keyword.HEAVY_ARMOR:
+            return self.card(iid).heavy_armor > 0
+        return kw in self.card(iid).keywords
+
+    # ---- health / damage -------------------------------------------------
+
+    def is_alive(self, iid: InstanceId) -> bool:
+        return self.inst(iid).current_health > 0
+
+    def is_dead(self, iid: InstanceId) -> bool:
+        ci = self.inst(iid)
+        return ci.zone == Zone.BOARD and ci.current_health <= 0
+
+    def apply_damage(self, iid: InstanceId, amount: int) -> int:
+        """Apply *amount* damage and return the effective damage dealt."""
+        ci = self.inst(iid)
+        effective = max(0, amount)
+        ci.current_health -= effective
+        return effective
+
+    # ---- id allocation ---------------------------------------------------
+
+    def _next_iid(self) -> InstanceId:
+        iid = InstanceId(self.next_instance_id)
+        self.next_instance_id += 1
+        return iid
+
+    def allocate_hq(
+        self,
+        card_cls: type[CardBase],
+        owner: PlayerId,
+        hp_override: int | None = None,
+    ) -> InstanceId:
+        iid = self._next_iid()
+        card_obj = card_cls()
+        hp = hp_override if hp_override is not None else getattr(card_obj, "health_value", 20)
+        self.instances[iid] = CardInstance(
+            iid=iid,
+            card=card_obj,
+            owner=owner,
+            zone=Zone.BOARD,
+            lane=Lane.SUPPORTLINE,
+            current_health=hp,
+        )
+        return iid
+
+    def allocate_card(
+        self, card_cls: type[CardBase], owner: PlayerId
+    ) -> InstanceId:
+        iid = self._next_iid()
+        card_obj = card_cls()
+        self.instances[iid] = CardInstance(
+            iid=iid,
+            card=card_obj,
+            owner=owner,
+            zone=Zone.DECK,
+            lane=Lane.NOT_ON_BOARD,
+            current_health=getattr(card_obj, "health_value", 0),
+            current_attack=getattr(card_obj, "attack_value", 0),
+            operation_cost=getattr(card_obj, "acost", 0),
+        )
+        return iid
+
+    # ---- observation for RL ----------------------------------------------
+
     def to_observation(self) -> dict:
         """Stable, minimal observation dict for RL integrations."""
-        return {
+        obs: dict = {
             "turn": self.turn,
             "active_player": int(self.active_player),
-            "players": {
-                int(pid): {
-                    "credits": p.credits,
-                    "max_credits": p.max_credits,
-                    "deck": [int(iid) for iid in p.deck],
-                    "hand": [int(iid) for iid in p.hand],
-                    "discard": [int(iid) for iid in p.discard],
-                    "countermeasures": [int(iid) for iid in p.countermeasures],
-                    "base": int(p.base_card_id),
-                }
-                for pid, p in self.players.items()
-            },
-            "supportline": {
-                int(pid): [int(iid) for iid in slots]
-                for pid, slots in self.supportline.items()
-            },
-            "frontline": [int(iid) for iid in self.frontline],
-            "instances": {
-                int(iid): {
-                    "card_class": inst.card.__class__.__name__,
-                    "owner": int(inst.owner),
-                    "zone": inst.zone.value,
-                    "lane": inst.lane.value if inst.lane else None,
-                    "cost": self.get_action_cost(iid),
-                    "attack": self.get_attack(iid),
-                    "max_health": self.get_max_health(iid),
-                    "current_health": self.get_current_health(iid),
-                    "exhausted": inst.exhausted,
-                }
-                for iid, inst in self.instances.items()
-            },
+            "game_over": self.game_over,
+            "winner": int(self.winner) if self.winner is not None else None,
+            "players": {},
+            "supportline": {},
+            "frontline": [int(i) for i in self.frontline],
+            "instances": {},
         }
+        for pid, p in self.players.items():
+            obs["players"][int(pid)] = {
+                "credits": p.credits,
+                "max_credits": p.max_credits,
+                "deck_size": len(p.deck),
+                "hand": [int(i) for i in p.hand],
+                "discard": [int(i) for i in p.discard],
+                "hq": int(p.hq_iid),
+            }
+        for pid, slots in self.supportline.items():
+            obs["supportline"][int(pid)] = [int(i) for i in slots]
+        for iid, ci in self.instances.items():
+            obs["instances"][int(iid)] = {
+                "card_class": ci.card.__class__.__name__,
+                "owner": int(ci.owner),
+                "zone": ci.zone.value,
+                "lane": ci.lane.value,
+                "current_health": ci.current_health,
+                "current_attack": ci.current_attack,
+                "operation_cost": ci.operation_cost,
+                "exhausted": ci.exhausted,
+                "keywords": [kw.value for kw in ci.card.keywords],
+            }
+        return obs

@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import random
-from typing import Sequence
 from dataclasses import dataclass
+from typing import Sequence
 
-from .types import PlayerId
-from .cards import CardBase, BaseCardBase
+from .cards.base import CardBase
+from .cards.headquarters import HeadquartersCard
 from .resolver import Resolver, StepResult
 from .state import GameConfig, GameState, PlayerState
+from .types import PlayerId
 
 
 @dataclass(slots=True)
 class Engine:
-    """High-level helper to create state and drive the resolver."""
+    """High-level helper to create a game and drive the resolver."""
 
     resolver: Resolver
 
@@ -30,15 +31,15 @@ class Engine:
         if len(deck_p1) == 0:
             raise ValueError("player 1 deck is empty")
 
-        base_p0_cls = deck_p0[0]
-        base_p1_cls = deck_p1[0]
-        deck_p0 = deck_p0[1:]
-        deck_p1 = deck_p1[1:]
+        hq_p0_cls = deck_p0[0]
+        hq_p1_cls = deck_p1[0]
+        cards_p0 = deck_p0[1:]
+        cards_p1 = deck_p1[1:]
 
-        if not issubclass(base_p0_cls, BaseCardBase):
-            raise ValueError(f"hq_p0 must be base card class: {base_p0_cls.__name__}")
-        if not issubclass(base_p1_cls, BaseCardBase):
-            raise ValueError(f"hq_p1 must be base card class: {base_p1_cls.__name__}")
+        if not issubclass(hq_p0_cls, HeadquartersCard):
+            raise ValueError(f"first card in deck_p0 must be HeadquartersCard: {hq_p0_cls.__name__}")
+        if not issubclass(hq_p1_cls, HeadquartersCard):
+            raise ValueError(f"first card in deck_p1 must be HeadquartersCard: {hq_p1_cls.__name__}")
 
         state = GameState(
             config=cfg,
@@ -50,47 +51,27 @@ class Engine:
             next_instance_id=1,
         )
 
-        # Allocate base instances
-        play0_base_iid = state.allocate_base_instance(
-            base_card_cls=base_p0_cls,
-            owner=PlayerId(0),
-            hp=cfg.starting_p0_hp,
-        )
-        play1_base_iid = state.allocate_base_instance(
-            base_card_cls=base_p1_cls,
-            owner=PlayerId(1),
-            hp=cfg.starting_p1_hp,
-        )
+        hq0_iid = state.allocate_hq(hq_p0_cls, owner=PlayerId(0), hp_override=cfg.starting_p0_hp)
+        hq1_iid = state.allocate_hq(hq_p1_cls, owner=PlayerId(1), hp_override=cfg.starting_p1_hp)
 
-        # Initialize players
-        state.players[PlayerId(0)] = PlayerState(
-            player_id=PlayerId(0),
-            base_card_id=play0_base_iid,
-        )
-        state.players[PlayerId(1)] = PlayerState(
-            player_id=PlayerId(1),
-            base_card_id=play1_base_iid,
-        )
+        state.players[PlayerId(0)] = PlayerState(player_id=PlayerId(0), hq_iid=hq0_iid)
+        state.players[PlayerId(1)] = PlayerState(player_id=PlayerId(1), hq_iid=hq1_iid)
 
-        # Allocate deck instances
-        for pid, deck in ((PlayerId(0), deck_p0), (PlayerId(1), deck_p1)):
-            for card_cls in deck:
-                iid = state.allocate_instance(card_cls, owner=pid)
+        for pid, cards in ((PlayerId(0), cards_p0), (PlayerId(1), cards_p1)):
+            for card_cls in cards:
+                iid = state.allocate_card(card_cls, owner=pid)
                 state.players[pid].deck.append(iid)
 
-        # Shuffle decks
         random.seed(state.rng_seed)
         random.shuffle(state.players[PlayerId(0)].deck)
         random.shuffle(state.players[PlayerId(1)].deck)
 
-        # Initialize board slots
         state.frontline = []
         state.supportline = {
-            PlayerId(0): [play0_base_iid],
-            PlayerId(1): [play1_base_iid],
+            PlayerId(0): [hq0_iid],
+            PlayerId(1): [hq1_iid],
         }
 
-        # Starting credits and draw
         for pid in (PlayerId(0), PlayerId(1)):
             p = state.players[pid]
             p.max_credits = 1

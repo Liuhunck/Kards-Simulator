@@ -3,52 +3,67 @@ from __future__ import annotations
 import sys
 
 from .engine import Engine
-from .state import GameState
 from .resolver import Resolver
-from .types import PlayerId, InstanceId
+from .state import GameState
+from .types import InstanceId, PlayerId
 from .actions import Attack, EndTurn, PlayCard, Advance
 
-from .cards.abilities.registry import default_registry
-from .cards.bases import GermanyHeadquarters, SovietHeadquarters
-from .cards.units.infantry import Infantry, RadioTeam
-from .cards.orders import ArtilleryStrike
+from .cards import (
+    GermanyHeadquarters,
+    SovietHeadquarters,
+    # Germany
+    Regiment1,
+    Regiment432,
+    Tank35T,
+    Tank38T,
+    StugIIIF,
+    Bf109E,
+    PanzerIIIL,
+    Flak88,
+    PantherG,
+    # Italy
+    FiatCR42,
+    FiatG50,
+    SavoiaCavalry,
+    M1340,
+    # Neutral
+    Infantry,
+    ArtilleryStrike,
+)
 
 
 def _print_state(state: GameState) -> None:
     p0 = state.players[PlayerId(0)]
     p1 = state.players[PlayerId(1)]
-    hp_p0 = state.get_current_health(p0.base_card_id)
-    hp_p1 = state.get_current_health(p1.base_card_id)
+    hp_p0 = state.inst(p0.hq_iid).current_health
+    hp_p1 = state.inst(p1.hq_iid).current_health
     print(f"Turn {state.turn} | Active: P{int(state.active_player)}")
 
     def fmt_unit(iid: InstanceId) -> str:
-        name = state.get_card_for_instance(iid).name
+        ci = state.inst(iid)
+        name = ci.card.name
+        if hasattr(ci.card, "attack_value"):
+            ex = "Z" if ci.exhausted else " "
+            return f"{name}({ci.current_attack}/{ci.current_health}|op={ci.operation_cost}){ex}"
         return name
 
     def render_supportline(pid: PlayerId) -> str:
-        parts: list[str] = []
-        for iid in state.supportline[pid]:
-            parts.append(f"{fmt_unit(iid)}(iid={int(iid)})")
-        prefix = f"  P{int(pid)} supportline: "
-        return prefix + " | ".join(parts)
+        parts = [f"{fmt_unit(iid)}(iid={int(iid)})" for iid in state.supportline[pid]]
+        return f"  P{int(pid)} supportline: " + " | ".join(parts)
 
     def render_frontline() -> str:
-        parts: list[str] = []
+        parts = [f"{fmt_unit(iid)}(iid={int(iid)})" for iid in state.frontline]
         owner = state.frontline_owner()
-        for iid in state.frontline:
-            parts.append(f"{fmt_unit(iid)}(iid={int(iid)})")
         prefix = "    " + (f"P{int(owner)} " if owner is not None else "   ")
         return prefix + "frontline: " + " | ".join(parts)
 
-    print(
-        f"P1 HQ={hp_p1} credits={p1.credits}/{p1.max_credits} hand={len(p1.hand)} deck={len(p1.deck)}"
-    )
+    print(f"P1 HQ={hp_p1} credits={p1.credits}/{p1.max_credits} hand={len(p1.hand)} deck={len(p1.deck)}")
     print(render_supportline(PlayerId(1)))
     print(render_frontline())
     print(render_supportline(PlayerId(0)))
-    print(
-        f"P0 HQ={hp_p0} credits={p0.credits}/{p0.max_credits} hand={len(p0.hand)} deck={len(p0.deck)}"
-    )
+    print(f"P0 HQ={hp_p0} credits={p0.credits}/{p0.max_credits} hand={len(p0.hand)} deck={len(p0.deck)}")
+    if state.game_over:
+        print(f"*** GAME OVER – Winner: P{int(state.winner)} ***")
     print()
 
 
@@ -59,20 +74,43 @@ def main() -> int:
         if i + 1 < len(sys.argv):
             script = sys.argv[i + 1]
 
-    engine = Engine(resolver=Resolver(registry=default_registry()))
+    seed = 1
+    if "--seed" in sys.argv:
+        i = sys.argv.index("--seed")
+        if i + 1 < len(sys.argv):
+            seed = int(sys.argv[i + 1])
 
-    # Sample decks (keep small for now)
-    deck0 = [GermanyHeadquarters] + [Infantry] * 8 + [ArtilleryStrike] * 4 + [RadioTeam] * 2
-    deck1 = [SovietHeadquarters] + [Infantry] * 8 + [ArtilleryStrike] * 4 + [RadioTeam] * 2
-    state = Engine.new_game(
-        deck0,
-        deck1,
-        seed=1,
-    )
+    engine = Engine(resolver=Resolver())
+
+    deck0 = [
+        GermanyHeadquarters,
+        Regiment1, Regiment1, Regiment1,       # 1费步兵 x3
+        Regiment432, Regiment432,              # 1费肉盾步兵 x2
+        Tank35T, Tank35T,                      # 2费坦克 x2
+        StugIIIF, StugIIIF,                    # 2费突击炮 x2
+        Tank38T, Tank38T,                      # 3费坦克(抽牌) x2
+        Bf109E, Bf109E,                        # 3费战斗机 x2
+        PanzerIIIL,                            # 3费坦克(类型加成) x1
+        PantherG,                              # 5费重坦 x1
+        Flak88,                                # 6费火炮 x1
+        ArtilleryStrike, ArtilleryStrike,      # 2费指令 x2
+    ]
+    deck1 = [
+        SovietHeadquarters,
+        SavoiaCavalry, SavoiaCavalry, SavoiaCavalry,  # 1费闪击骑兵 x3
+        FiatCR42, FiatCR42, FiatCR42,                  # 1费战斗机 x3
+        Infantry, Infantry,                            # 1费步兵 x2
+        FiatG50, FiatG50,                              # 2费战斗机(治疗) x2
+        M1340, M1340,                                  # 3费坦克(条件闪击) x2
+        Tank38T, Tank38T,                              # 3费坦克(抽牌) x2
+        Bf109E, Bf109E,                                # 3费战斗机 x2
+        PantherG,                                      # 5费重坦 x1
+        ArtilleryStrike, ArtilleryStrike,              # 2费指令 x2
+    ]
+    state = Engine.new_game(deck0, deck1, seed=seed)
+    print(f"Seed: {seed}")
 
     if script is not None:
-        # Run a short scripted session (semicolon-separated), then exit.
-        # Example: python -m kards_sim --script "hand; play 0 frontline 0; end; quit"
         cmds = [c.strip() for c in script.split(";") if c.strip()]
         it = iter(cmds)
 
@@ -84,12 +122,17 @@ def main() -> int:
 
         input_fn = _next
     else:
-        input_fn = lambda: input("cmd> ")
+        input_fn = lambda: input("cmd> ")  # noqa: E731
+
+    cmd_history: list[str] = []
 
     print("Kards-Simulator CLI (MVP). Type 'help' for commands.\n")
     while True:
         _print_state(state)
-        cmd = input_fn().strip().split()
+        if state.game_over:
+            return 0
+        raw = input_fn().strip()
+        cmd = raw.split()
         if not cmd:
             continue
         if cmd[0] in {"quit", "exit"}:
@@ -102,57 +145,49 @@ def main() -> int:
             print("  adv(a) <support_index> <front_index>      - advance to frontline")
             print("  atk(k) <attacker_iid> <defender_iid>      - attack unit")
             print("  end(e)                                    - end turn")
+            print("  replay(r)                                 - export command history")
+            continue
+        if cmd[0] in ("replay", "r"):
+            print(f"--seed {seed} --script \"{';'.join(cmd_history)}\"")
             continue
 
         ap = state.active_player
         player = state.players[ap]
+        res = None
 
-        if cmd[0] == "hand" or cmd[0] == "h":
+        if cmd[0] in ("hand", "h"):
             for idx, iid in enumerate(player.hand):
-                d = state.get_card_for_instance(iid)
-                print(
-                    f"[{idx}] iid={int(iid)} {d.name} ({d.card_type.value}) cost={d.cost}"
-                )
+                ci = state.inst(iid)
+                cost = getattr(ci.card, "cost", "?")
+                uc = getattr(ci.card, "unit_class", None)
+                tag = uc.value if uc else ci.card.card_type.value
+                stats = f" {ci.current_attack}/{ci.current_health} op={ci.operation_cost}" if uc else ""
+                print(f"[{idx}] iid={int(iid)} {ci.card.name} ({tag}) cost={cost}{stats}")
             continue
 
-        if (cmd[0] == "deploy" or cmd[0] == "d") and len(cmd) == 3:
-            hi = int(cmd[1])
-            si = int(cmd[2])
-
+        elif cmd[0] in ("deploy", "d") and len(cmd) == 3:
+            hi, si = int(cmd[1]), int(cmd[2])
             if hi < 0 or hi >= len(player.hand):
                 print("invalid hand index")
                 continue
-
             iid = player.hand[hi]
+            res = engine.step(state, PlayCard(player_id=ap, card=iid, index=si))
 
-            res = engine.step(
-                state,
-                PlayCard(player_id=ap, card=iid, index=si),
-            )
-        elif (cmd[0] == "adv" or cmd[0] == "a") and len(cmd) == 3:
-            si = int(cmd[1])
-            fi = int(cmd[2])
-
+        elif cmd[0] in ("adv", "a") and len(cmd) == 3:
+            si, fi = int(cmd[1]), int(cmd[2])
             if si < 0 or si >= len(state.supportline[ap]):
                 print("invalid supportline index")
                 continue
-
             iid = state.supportline[ap][si]
+            res = engine.step(state, Advance(player_id=ap, card=iid, index=fi))
 
-            res = engine.step(
-                state,
-                Advance(
-                    player_id=ap,
-                    card=iid,
-                    index=fi,
-                ),
-            )
-        elif (cmd[0] == "order" or cmd[0] == "o") and len(cmd) == 3:
+        elif cmd[0] in ("order", "o") and len(cmd) == 3:
             hi = int(cmd[1])
             target = InstanceId(int(cmd[2]))
             iid = player.hand[hi]
             res = engine.step(state, PlayCard(player_id=ap, card=iid, target=target))
-        elif (cmd[0] == "atk" or cmd[0] == "k") and len(cmd) == 3:
+
+        elif cmd[0] in ("atk", "k") and len(cmd) == 3:
             res = engine.step(
                 state,
                 Attack(
@@ -161,14 +196,20 @@ def main() -> int:
                     defender=InstanceId(int(cmd[2])),
                 ),
             )
-        elif cmd[0] == "end" or cmd[0] == "e":
+
+        elif cmd[0] in ("end", "e"):
             res = engine.step(state, EndTurn(player_id=ap))
+
         else:
             print("unknown command, try 'help'")
             continue
 
-        if res.violation is not None:
-            print(f"RuleViolation: {res.violation}")
-        else:
-            for ev in res.events:
-                print(f"event: {ev}")
+        if res is not None:
+            cmd_history.append(raw)
+            if res.violation is not None:
+                print(f"RuleViolation: {res.violation}")
+            else:
+                for ev in res.events:
+                    print(f"event: {ev}")
+
+    return 0

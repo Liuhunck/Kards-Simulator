@@ -2,94 +2,185 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..events import Trigger
-from ..types import CardType, Nation
-from .specs import AbilitySpec
+from ..types import CardType, Keyword, Nation
 
 if TYPE_CHECKING:
-    from ..actions import Advance, Attack, PlayCard
-    from ..events import Event, Trigger, TriggerContext
+    from ..events import Event, TriggerContext
     from ..state import GameState
 
 
 class CardBase:
-    """Base class for all card implementations."""
+    """Root base class for every card in the game.
 
-    name: str = "Card"
+    Subclass hierarchy
+    ------------------
+    CardBase
+    ├── HeadquartersCard   – HQ / base
+    ├── UnitCard           – deployable military units
+    ├── OrderCard          – one-shot effect cards
+    └── CountermeasureCard – reactive trap cards
+
+    Keywords vs. abilities
+    ----------------------
+    *Keywords* are common, reusable mechanics (Guard, Blitz, …) listed in
+    ``keywords``.  Their logic lives in the resolver / rules modules.
+
+    *Abilities* are card-specific effects implemented by overriding the
+    trigger-hook methods below (``on_deploy``, ``on_destroy``, …).  This
+    gives every card maximum flexibility to define unique behaviour.
+    """
+
+    # ---- card identity (set on each concrete card class) -----------------
+    name: str = "Unnamed Card"
     card_type: CardType = CardType.ORDER
     nation: Nation = Nation.NEUTRAL
-    abilities: tuple[AbilitySpec, ...] = ()
 
-    @property
-    def country(self) -> Nation:
-        return self.__class__.nation
+    # ---- keyword abilities (reusable mechanics) --------------------------
+    keywords: frozenset[Keyword] = frozenset()
 
-    def deploy(self, state: GameState, action: PlayCard) -> list[Event]:
-        from ..rules import RuleViolation
+    # ---- parameterised keywords ------------------------------------------
+    heavy_armor: int = 0
+    """Heavy Armor level (1–3). Reduces incoming unit damage by this amount."""
 
-        raise RuleViolation("deploy not supported")
+    # ---- passive flags -----------------------------------------------------
+    order_immune: bool = False
+    """If True, this unit cannot be targeted by enemy order cards."""
 
-    def advance(self, state: GameState, action: Advance) -> list[Event]:
-        from ..rules import RuleViolation
+    # ---- card-specific ability hooks -------------------------------------
+    # Override any of these in a concrete card to add custom effects.
+    # Each hook receives the current game state and a TriggerContext that
+    # carries information about what triggered the hook (source, target,
+    # player, amount, etc.).  Return a list of Event objects that the
+    # resolver will enqueue.
 
-        raise RuleViolation("advance not supported")
-
-    def attack(self, state: GameState, action: Attack) -> list[Event]:
-        from ..rules import RuleViolation
-
-        raise RuleViolation("attack not supported")
-
-    def on_turn_start(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+    def on_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when THIS card is deployed onto the board."""
         return []
 
-    def on_turn_end(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+    def on_play(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when THIS card is played from hand (orders, countermeasures)."""
         return []
+
+    def on_advance(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when THIS unit advances from supportline to frontline."""
+        return []
+
+    def on_retreat(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when THIS unit retreats from frontline to supportline."""
+        return []
+
+    def on_destroy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when THIS card is destroyed (before removal)."""
+        return []
+
+    # ---- combat hooks ----------------------------------------------------
 
     def before_attack(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called before THIS unit performs an attack."""
         return []
 
     def after_attack(self, state: GameState, ctx: TriggerContext) -> list[Event]:
-        return []
-
-    def before_deal_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
-        return []
-
-    def after_deal_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called after THIS unit performs an attack."""
         return []
 
     def before_take_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called before THIS card takes damage."""
         return []
 
     def after_take_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called after THIS card takes damage."""
         return []
 
-    def on_death(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+    def before_deal_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called before THIS card deals damage."""
         return []
 
-    def after_death(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+    def after_deal_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called after THIS card deals damage."""
         return []
 
-    def trigger(
-        self, state: GameState, trigger: Trigger, ctx: TriggerContext
+    # ---- turn lifecycle hooks --------------------------------------------
+
+    def on_turn_start(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called at the start of owner's turn while this card is on board."""
+        return []
+
+    def on_turn_end(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called at the end of owner's turn while this card is on board."""
+        return []
+
+    # ---- global reaction hooks -------------------------------------------
+    # These fire in response to events involving OTHER cards. Useful for
+    # aura effects and reaction abilities.
+
+    def on_any_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when ANY unit is deployed (not just this one)."""
+        return []
+
+    def on_any_play(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when ANY card is played."""
+        return []
+
+    def on_any_destroy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
+        """Called when ANY unit is destroyed."""
+        return []
+
+    # ---- continuous modifiers (auras) ------------------------------------
+    # These are queried by the state/resolver to compute effective stats.
+    # Return the delta (can be negative).
+
+    def attack_modifier(self, state: GameState, target_iid: int) -> int:
+        """Continuous attack buff/debuff applied to *target_iid* while this card is on board."""
+        return 0
+
+    def health_modifier(self, state: GameState, target_iid: int) -> int:
+        """Continuous health buff/debuff applied to *target_iid* while this card is on board."""
+        return 0
+
+    def cost_modifier(self, state: GameState, target_iid: int) -> int:
+        """Continuous cost reduction/increase applied to *target_iid*."""
+        return 0
+
+    # ---- trigger dispatch ------------------------------------------------
+
+    def dispatch_trigger(
+        self, state: GameState, trigger: "Trigger", ctx: "TriggerContext"
     ) -> list[Event]:
-        if trigger == Trigger.TURN_START:
-            return self.on_turn_start(state, ctx)
-        if trigger == Trigger.TURN_END:
-            return self.on_turn_end(state, ctx)
-        if trigger == Trigger.BEFORE_ATTACK:
-            return self.before_attack(state, ctx)
-        if trigger == Trigger.AFTER_ATTACK:
-            return self.after_attack(state, ctx)
-        if trigger == Trigger.BEFORE_DEAL_DAMAGE:
-            return self.before_deal_damage(state, ctx)
-        if trigger == Trigger.AFTER_DEAL_DAMAGE:
-            return self.after_deal_damage(state, ctx)
-        if trigger == Trigger.BEFORE_TAKE_DAMAGE:
-            return self.before_take_damage(state, ctx)
-        if trigger == Trigger.AFTER_TAKE_DAMAGE:
-            return self.after_take_damage(state, ctx)
-        if trigger == Trigger.ON_DEATH:
-            return self.on_death(state, ctx)
-        if trigger == Trigger.AFTER_DEATH:
-            return self.after_death(state, ctx)
+        """Route a trigger enum to the matching hook method."""
+        from ..events import Trigger
+
+        method_name = _TRIGGER_METHOD_MAP.get(trigger)
+        if method_name is not None:
+            method = getattr(self, method_name)
+            return method(state, ctx)
         return []
+
+
+_TRIGGER_METHOD_MAP: dict = {}
+
+
+def _build_trigger_map() -> None:
+    from ..events import Trigger
+
+    global _TRIGGER_METHOD_MAP
+    _TRIGGER_METHOD_MAP = {
+        Trigger.TURN_START: "on_turn_start",
+        Trigger.TURN_END: "on_turn_end",
+        Trigger.ON_DEPLOY: "on_deploy",
+        Trigger.ON_PLAY: "on_play",
+        Trigger.ON_ADVANCE: "on_advance",
+        Trigger.ON_RETREAT: "on_retreat",
+        Trigger.ON_DESTROY: "on_destroy",
+        Trigger.ON_ANY_DEPLOY: "on_any_deploy",
+        Trigger.ON_ANY_PLAY: "on_any_play",
+        Trigger.ON_ANY_DESTROY: "on_any_destroy",
+        Trigger.BEFORE_ATTACK: "before_attack",
+        Trigger.AFTER_ATTACK: "after_attack",
+        Trigger.BEFORE_DEAL_DAMAGE: "before_deal_damage",
+        Trigger.AFTER_DEAL_DAMAGE: "after_deal_damage",
+        Trigger.BEFORE_TAKE_DAMAGE: "before_take_damage",
+        Trigger.AFTER_TAKE_DAMAGE: "after_take_damage",
+    }
+
+
+_build_trigger_map()

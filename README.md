@@ -1,111 +1,124 @@
 # Kards-Simulator
 
-Kards Simulator (engine-first, Python 3).
+A Python engine for simulating [KARDS: The WWII Card Game](https://www.kards.com/), designed for both interactive play and reinforcement learning integration.
 
-## Quick start
+## Quick Start
 
-### 1) Create venv + install
-
-PowerShell:
+### Install
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e .
+pip install -e ".[dev]"
 ```
 
-Dev deps (tests):
-
-```powershell
-pip install -e .[dev]
-pytest
-```
-
-### 2) Run the CLI prototype
+### Run the CLI
 
 ```powershell
 python -m kards_sim
 ```
 
-This is a minimal engine prototype with:
+### Run tests
 
--   2 players, deck/hand/discard
--   2-lane board model (frontline/supportline) with 5 columns
--   Actions: play unit, play order (MVP: damage), attack, end turn
-
-## Roadmap
-
-The goal is a faithful KARDS rules engine. Many mechanics are intentionally stubbed or simplified in this first prototype.
-
-
-## Test cmd
-
-```bash
-d 2 0; e; d 0 1; d 0 2; e; a 0 0; k 3 2;
+```powershell
+pytest -v
 ```
 
-```
-Major power: japan
-Ally: france
-HQ: 特鲁克
-
-japan:
-4x (0K) 深挖
-1x (1K) 九三式装甲车
-3x (1K) 九四式轻装甲车
-4x (1K) 扩张
-3x (1K) 骑兵第十五联队
-2x (1K) 搜索第三十三联队
-1x (1K) 转变战法
-2x (1K) 佐镇第五特别陆战队
-1x (2K) 搜索第十联队
-1x (2K) 亡命之计
-2x (3K) 步兵第百五十一联队
-1x (3K) 第二挺进团
-2x (3K) 京都联队
-1x (3K) 侦察队
-1x (3K) Ki-30 九七轻爆
-1x (3K) Ki-46 百式司侦
-2x (4K) 鲭江联队
-
-france:
-1x (0K) 出动
-2x (0K) 第 13 龙骑兵团
-1x (1K) 荣誉与忠诚
-2x (2K) 第 110 摩托化步兵团
-1x (3K) 迪勒计划
-
-%%36|5C666B7lhHlFnrrktCtMvc;6CrVt1tFtGtJx5;6x7e;5ZtQ
-```
+## Project Structure
 
 ```
-Major power: usa
-Ally: britain
-HQ: 瑟堡
-
-usa:
-2x (0K) 胁迫
-2x (1K) 航母掩护
-2x (1K) 为了自由
-4x (2K) USS 沙利文兄弟号
-2x (3K) 航母打击群
-2x (3K) 空中掩护
-1x (3K) 霹雳师
-2x (3K) PB2Y 科罗纳多
-2x (3K) SC 海鹰
-1x (3K) USS 密苏里号
-2x (4K) 第 41 步兵团
-2x (4K) 三巨头
-2x (5K) USS 约克城号
-1x (6K) 战略轰炸
-1x (6K) F7F 虎猫
-
-britain:
-1x (1K) 米德尔塞克斯团
-4x (1K) 米色团
-3x (3K) 边防团
-1x (3K) 虎蛾
-2x (4K) 前进观察员
-
-%%52|bEtYv6v9vYw8;blbqohqYsGsHu6u8v7vRvU;pU;sUvS
+src/kards_sim/
+├── engine.py           # Game engine: creates games, drives the resolver
+├── state.py            # GameState, PlayerState, CardInstance (mutable runtime state)
+├── types.py            # Enums: CardType, UnitClass, Nation, Lane, Zone, Keyword
+├── events.py           # Event hierarchy + Trigger enum
+├── actions.py          # Player actions: PlayCard, Advance, Attack, EndTurn
+├── resolver.py         # Action resolution, event queue, keyword mechanics
+├── rules.py            # Rule validation (play, deploy, advance, attack)
+├── cli.py              # Interactive CLI
+│
+└── cards/
+    ├── base.py             # CardBase – root class with trigger hooks
+    ├── unit.py             # UnitCard base
+    ├── order.py            # OrderCard base
+    ├── countermeasure.py   # CountermeasureCard base
+    ├── headquarters.py     # HeadquartersCard base
+    │
+    ├── germany/            # German nation cards
+    │   ├── headquarters.py
+    │   ├── regiment_1.py
+    │   ├── regiment_432.py
+    │   └── tank_35t.py
+    ├── soviet/             # Soviet nation cards
+    ├── usa/                # USA nation cards
+    ├── britain/            # Britain nation cards
+    ├── japan/              # Japan nation cards
+    └── neutral/            # Neutral (shared) cards
+        ├── infantry.py
+        ├── radio_team.py
+        ├── light_tank.py
+        ├── field_gun.py
+        ├── fighter.py
+        ├── bomber.py
+        ├── artillery_strike.py
+        └── sample_countermeasure.py
 ```
+
+## Architecture
+
+### Keywords vs. Card-specific Abilities
+
+**Keywords** are reusable mechanics shared by many cards. They are defined as
+`Keyword` enum values and handled entirely by the engine (resolver + rules):
+
+| Keyword | Effect |
+|---------|--------|
+| `GUARD` | Adjacent non-guard units cannot be attacked (except by bombers/artillery) |
+| `BLITZ` | Can operate (move/attack) on the deployment turn |
+| `FURY` | Can attack twice per turn |
+| `AMBUSH` | When attacked, strikes first; if attacker dies, it deals no damage |
+| `SMOKESCREEN` | Cannot be attacked by enemies until it moves or attacks |
+| `MOBILIZE` | Gains +1/+1 at turn start; lost when damaged |
+| `LONG_RANGE` | Ignores lane adjacency restrictions |
+| `RESISTANCE` | Takes 1 less damage from orders |
+
+**Heavy Armor** is a levelled keyword (1–3) declared as a separate attribute:
+
+```python
+class MyUnit(UnitCard):
+    keywords = frozenset({Keyword.GUARD})
+    heavy_armor = 2  # Reduces incoming unit damage by 2
+```
+
+**Card-specific abilities** are implemented by overriding trigger hooks on `CardBase`:
+
+```python
+class Tank35T(UnitCard):
+    def on_deploy(self, state, ctx):
+        # Reduce operation cost when friendly infantry is present
+        ...
+```
+
+Available trigger hooks:
+- `on_deploy`, `on_play`, `on_advance`, `on_retreat`, `on_destroy`
+- `before_attack`, `after_attack`
+- `before_deal_damage`, `after_deal_damage`
+- `before_take_damage`, `after_take_damage`
+- `on_turn_start`, `on_turn_end`
+- `on_any_deploy`, `on_any_play`, `on_any_destroy` (global reactions)
+- `attack_modifier`, `health_modifier`, `cost_modifier` (continuous auras)
+
+### Adding a New Card
+
+1. Create a file under `cards/{nation}/` (e.g. `cards/germany/my_new_unit.py`)
+2. Subclass `UnitCard`, `OrderCard`, or `CountermeasureCard`
+3. Set the required class attributes (`name`, `cost`, `attack_value`, etc.)
+4. Add keywords via `keywords = frozenset({...})`
+5. Override trigger hooks for custom abilities
+6. Export from `cards/{nation}/__init__.py` and `cards/__init__.py`
+
+### RL Integration
+
+Call `state.to_observation()` to get a stable dict representation of the game
+state suitable for use as an observation space. The engine is fully
+deterministic given a seed, making it suitable for RL training loops.
