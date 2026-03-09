@@ -34,6 +34,8 @@ class CardBase:
     name: str = "Unnamed Card"
     card_type: CardType = CardType.ORDER
     nation: Nation = Nation.NEUTRAL
+    description: str = ""
+    """简短的中文能力描述，用于 CLI 展示。"""
 
     # ---- keyword abilities (reusable mechanics) --------------------------
     keywords: frozenset[Keyword] = frozenset()

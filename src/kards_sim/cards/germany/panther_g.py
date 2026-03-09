@@ -16,3 +16,4 @@ class PantherG(UnitCard):
     health_value = 5
     heavy_armor = 1
     order_immune = True
+    description = "重甲1；免疫敌方指令"

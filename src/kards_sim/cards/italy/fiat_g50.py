@@ -20,6 +20,7 @@ class FiatG50(UnitCard):
     acost = 2
     attack_value = 2
     health_value = 3
+    description = "造成伤害时治疗友方总部同等量"
 
     def after_deal_damage(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         from ...events import HealApplied

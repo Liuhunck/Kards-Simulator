@@ -21,6 +21,7 @@ class PanzerIIIL(UnitCard):
     attack_value = 3
     health_value = 5
     keywords = frozenset({Keyword.BLITZ})
+    description = "闪击；友方每有一种非坦克类型+1攻"
 
     _type_bonus: int = 0
 

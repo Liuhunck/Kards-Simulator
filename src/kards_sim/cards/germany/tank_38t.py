@@ -20,6 +20,7 @@ class Tank38T(UnitCard):
     acost = 1
     attack_value = 2
     health_value = 3
+    description = "部署时抽1张牌"
 
     def on_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         from ...events import CardDrawn

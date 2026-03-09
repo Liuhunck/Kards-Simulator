@@ -4,7 +4,7 @@ from .order import OrderCard
 from .countermeasure import CountermeasureCard
 from .headquarters import HeadquartersCard
 
-from .germany import Bf109E, Flak88, GermanyHeadquarters, PantherG, PanzerIIIL, Regiment1, Regiment432, Tank35T, Tank38T, StugIIIF
+from .germany import Bf109E, Blackout, CoordinatedOps, EagleClaw, Flak88, GermanyHeadquarters, PantherG, PanzerIIA, PanzerIIIL, Regiment1, Regiment432, Regiment980, Tank35T, Tank38T, StugIIIF
 from .soviet import SovietHeadquarters
 from .usa import UsaHeadquarters
 from .britain import BritainHeadquarters
@@ -31,6 +31,10 @@ ALL_CARD_CLASSES: list[type[CardBase]] = [
     Infantry,
     Regiment1,
     Regiment432,
+    Regiment980,
+    EagleClaw,
+    Blackout,
+    CoordinatedOps,
     RadioTeam,
     LightTank,
     Tank35T,
@@ -40,6 +44,7 @@ ALL_CARD_CLASSES: list[type[CardBase]] = [
     PanzerIIIL,
     Flak88,
     PantherG,
+    PanzerIIA,
     FieldGun,
     Fighter,
     Bomber,
@@ -63,6 +68,10 @@ __all__ = [
     "GermanyHeadquarters",
     "Regiment1",
     "Regiment432",
+    "Regiment980",
+    "EagleClaw",
+    "Blackout",
+    "CoordinatedOps",
     "Tank35T",
     "StugIIIF",
     "Tank38T",
@@ -70,6 +79,7 @@ __all__ = [
     "PanzerIIIL",
     "Flak88",
     "PantherG",
+    "PanzerIIA",
     # Soviet
     "SovietHeadquarters",
     # USA

@@ -4,16 +4,16 @@
 # ============================================================
 
 # ---------- 基本信息 ----------
-name: "豹式坦克G型"                # 卡牌名称，例如 "第1步兵团"
+name: "二号坦克A型"                # 卡牌名称，例如 "第1步兵团"
 nation: "germany"              # 所属国家: germany / soviet / usa / britain / japan / france / italy / poland / finland / neutral
 card_type: "unit"           # 卡牌类型: unit / order / countermeasure
 
 # ---------- 单位属性 (仅 card_type 为 unit 时填写) ----------
 unit_class: "tank"          # 兵种: infantry / tank / artillery / fighter / bomber
-cost: 5                 # 部署费用 (Kredits)
-operation_cost: 3       # 行动费用 (移动/攻击需要的 Kredits)
-attack: 6               # 攻击力
-health: 5               # 生命值
+cost: 1                 # 部署费用 (Kredits)
+operation_cost: 1       # 行动费用 (移动/攻击需要的 Kredits)
+attack: 1               # 攻击力
+health: 3               # 生命值
 
 # ---------- 命令属性 (仅 card_type 为 order 时填写) ----------
 # cost: 0               # 使用费用 (Kredits)
@@ -32,12 +32,12 @@ health: 5               # 生命值
 # - long_range     : 远程 — 无视战线邻接限制
 # - resistance     : 抵抗 — 受到命令卡伤害减1
 # - pincer         : 钳击 — 部署时选择一个友方单位，两者获得共同增益
-keywords: []
+keywords: [blitz, smokescreen]
 
 # ---------- 重甲 (带等级的关键词，单独设置) ----------
 # 填写 1 / 2 / 3，表示重甲等级，0 表示无重甲
 # 重甲N — 受到的单位伤害减少N点
-heavy_armor: 1
+heavy_armor: 0
 
 # ---------- 卡牌专属能力 ----------
 # 在这里用自然语言描述该卡牌独有的能力
@@ -80,4 +80,4 @@ heavy_armor: 1
 abilities: []
 
 # ---------- 备注 / 卡牌描述 ----------
-description: "无法被敌方指令指向"
+description: ""

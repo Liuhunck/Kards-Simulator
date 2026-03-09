@@ -16,6 +16,7 @@ class ArtilleryStrike(OrderCard):
     name = "炮火打击"
     nation = Nation.NEUTRAL
     cost = 2
+    description = "对目标造成2点伤害"
 
     def on_play(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         from ...events import DamageDealt

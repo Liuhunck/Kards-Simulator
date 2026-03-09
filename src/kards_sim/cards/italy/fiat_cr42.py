@@ -20,6 +20,7 @@ class FiatCR42(UnitCard):
     acost = 1
     attack_value = 1
     health_value = 2
+    description = "部署时若友方多于敌方，+1攻"
 
     def on_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         from ...events import BuffApplied

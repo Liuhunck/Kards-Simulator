@@ -43,8 +43,13 @@ def _print_state(state: GameState) -> None:
         ci = state.inst(iid)
         name = ci.card.name
         if hasattr(ci.card, "attack_value"):
-            ex = "Z" if ci.exhausted else " "
-            return f"{name}({ci.current_attack}/{ci.current_health}|op={ci.operation_cost}){ex}"
+            flags = ""
+            if ci.suppressed:
+                flags += "S"
+            if ci.exhausted:
+                flags += "Z"
+            tag = f"[{flags}]" if flags else ""
+            return f"{name}({ci.current_attack}/{ci.current_health}|op={ci.operation_cost}){tag}"
         return name
 
     def render_supportline(pid: PlayerId) -> str:
@@ -64,6 +69,23 @@ def _print_state(state: GameState) -> None:
     print(f"P0 HQ={hp_p0} credits={p0.credits}/{p0.max_credits} hand={len(p0.hand)} deck={len(p0.deck)}")
     if state.game_over:
         print(f"*** GAME OVER – Winner: P{int(state.winner)} ***")
+
+    board_iids = (
+        list(state.supportline[PlayerId(1)])
+        + list(state.frontline)
+        + list(state.supportline[PlayerId(0)])
+    )
+    descs = []
+    for iid in board_iids:
+        ci = state.inst(iid)
+        if ci.card.description:
+            uc = getattr(ci.card, "unit_class", None)
+            tag = uc.value if uc else ci.card.card_type.value
+            descs.append(f"  iid={int(iid)} {ci.card.name}({tag}): {ci.card.description}")
+    if descs:
+        print("-- abilities --")
+        for line in descs:
+            print(line)
     print()
 
 
@@ -141,7 +163,7 @@ def main() -> int:
             print("Commands:")
             print("  hand(h)                                   - list hand cards")
             print("  deploy(d) <hand_index> <support_index>    - deploy unit from hand")
-            print("  order(o) <hand_index> <target_iid>        - play damage order")
+            print("  order(o) <hand_index> [target_iid]         - play order (target optional)")
             print("  adv(a) <support_index> <front_index>      - advance to frontline")
             print("  atk(k) <attacker_iid> <defender_iid>      - attack unit")
             print("  end(e)                                    - end turn")
@@ -162,7 +184,8 @@ def main() -> int:
                 uc = getattr(ci.card, "unit_class", None)
                 tag = uc.value if uc else ci.card.card_type.value
                 stats = f" {ci.current_attack}/{ci.current_health} op={ci.operation_cost}" if uc else ""
-                print(f"[{idx}] iid={int(iid)} {ci.card.name} ({tag}) cost={cost}{stats}")
+                desc = f" [{ci.card.description}]" if ci.card.description else ""
+                print(f"[{idx}] iid={int(iid)} {ci.card.name} ({tag}) cost={cost}{stats}{desc}")
             continue
 
         elif cmd[0] in ("deploy", "d") and len(cmd) == 3:
@@ -181,9 +204,12 @@ def main() -> int:
             iid = state.supportline[ap][si]
             res = engine.step(state, Advance(player_id=ap, card=iid, index=fi))
 
-        elif cmd[0] in ("order", "o") and len(cmd) == 3:
+        elif cmd[0] in ("order", "o") and len(cmd) in (2, 3):
             hi = int(cmd[1])
-            target = InstanceId(int(cmd[2]))
+            if hi < 0 or hi >= len(player.hand):
+                print("invalid hand index")
+                continue
+            target = InstanceId(int(cmd[2])) if len(cmd) == 3 else None
             iid = player.hand[hi]
             res = engine.step(state, PlayCard(player_id=ap, card=iid, target=target))
 

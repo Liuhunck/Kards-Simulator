@@ -84,6 +84,12 @@ def _check_game_over(state: GameState) -> GameOver | None:
 
 
 def _end_turn_bookkeeping(state: GameState) -> None:
+    for iid in state.board_unit_iids():
+        ci = state.inst(iid)
+        if ci.suppressed and ci.suppressed_until_turn == state.turn:
+            ci.suppressed = False
+            ci.suppressed_until_turn = -1
+
     state.active_player = state.opponent(state.active_player)
     state.turn += 1
     p = state.players[state.active_player]
@@ -122,7 +128,10 @@ def _resolve_deploy_unit(state: GameState, action: PlayCard) -> list[Event]:
     ci.lane = Lane.SUPPORTLINE
     ci.exhausted = not state.has_keyword(iid, Keyword.BLITZ)
 
-    if state.has_keyword(iid, Keyword.SMOKESCREEN):
+    if (
+        state.has_keyword(iid, Keyword.SMOKESCREEN)
+        and not state.has_keyword(iid, Keyword.GUARD)
+    ):
         ci.smokescreen_active = True
 
     return [
@@ -154,6 +163,14 @@ def _resolve_play_order(state: GameState, action: PlayCard) -> list[Event]:
         target_ci = state.inst(action.target)
         if target_ci.owner != action.player_id and target_card.order_immune:
             require(False, "target is immune to enemy orders")
+
+    from .cards.order import OrderCard
+
+    card_obj = state.card(iid)
+    if isinstance(card_obj, OrderCard):
+        err = card_obj.validate_target(state, action.player_id, action.target)
+        if err is not None:
+            require(False, err)
 
     ci = state.inst(iid)
     player = state.players[action.player_id]

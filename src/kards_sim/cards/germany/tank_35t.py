@@ -20,6 +20,7 @@ class Tank35T(UnitCard):
     acost = 1
     attack_value = 2
     health_value = 2
+    description = "部署时若有友方步兵，行动费-1"
 
     def on_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         assert ctx.source is not None

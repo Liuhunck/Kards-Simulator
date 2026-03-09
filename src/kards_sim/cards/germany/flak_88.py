@@ -21,6 +21,7 @@ class Flak88(UnitCard):
     attack_value = 3
     health_value = 4
     keywords = frozenset({Keyword.AMBUSH})
+    description = "伏击；对空军/坦克攻击力翻倍"
 
     _attack_boosted: bool = False
 

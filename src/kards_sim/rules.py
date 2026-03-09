@@ -58,6 +58,7 @@ def can_advance_unit(
     require(ci.zone == Zone.BOARD, "unit not on board")
     require(ci.lane == Lane.SUPPORTLINE, "unit not in supportline")
     require(not ci.exhausted, "unit exhausted")
+    require(not ci.suppressed, "unit is suppressed")
     require(state.card_type_of(iid) == CardType.UNIT, "not a unit")
     require(
         state.frontline_owner() != state.opponent(pid),
@@ -88,6 +89,7 @@ def can_attack(
     require(a.zone == Zone.BOARD, "attacker not on board")
     require(a.lane != Lane.NOT_ON_BOARD, "attacker missing lane")
     require(not a.exhausted, "attacker exhausted")
+    require(not a.suppressed, "attacker is suppressed")
     require(state.card_type_of(attacker) == CardType.UNIT, "attacker not a unit")
     require(a.current_health > 0, "attacker dead")
 

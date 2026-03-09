@@ -21,6 +21,7 @@ class StugIIIF(UnitCard):
     attack_value = 2
     health_value = 3
     keywords = frozenset({Keyword.SMOKESCREEN})
+    description = "烟幕；对坦克攻击力翻倍"
 
     _attack_boosted: bool = False
 

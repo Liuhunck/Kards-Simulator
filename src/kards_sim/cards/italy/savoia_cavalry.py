@@ -15,6 +15,7 @@ class SavoiaCavalry(UnitCard):
     attack_value = 1
     health_value = 1
     keywords = frozenset({Keyword.BLITZ})
+    description = "闪击；同时算作坦克"
 
     def counts_as(self, uc: UnitClass) -> bool:
         return uc in (UnitClass.INFANTRY, UnitClass.TANK)

@@ -6,6 +6,9 @@ from kards_sim.cards import (
     GermanyHeadquarters,
     SovietHeadquarters,
     ArtilleryStrike,
+    Blackout,
+    CoordinatedOps,
+    EagleClaw,
     Infantry,
     Fighter,
     Bomber,
@@ -448,3 +451,274 @@ def test_panther_g_immune_to_enemy_orders(engine: Engine) -> None:
     )
     assert res.violation is not None
     assert "immune" in res.violation.reason
+
+
+# -- EagleClaw ----------------------------------------------------------------
+
+def test_eagle_claw_damages_all_enemy_supportline(engine: Engine) -> None:
+    """鹰爪应对敌方支援线所有单位造成2点伤害。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry, Infantry],
+        seed=1,
+    )
+
+    eagle = state.allocate_card(EagleClaw, owner=PlayerId(0))
+    state.inst(eagle).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(eagle)
+    state.players[PlayerId(0)].credits = 10
+
+    inf1 = state.allocate_card(Infantry, owner=PlayerId(1))
+    inf2 = state.allocate_card(Infantry, owner=PlayerId(1))
+    place_on_board(state, inf1, Lane.SUPPORTLINE, owner=PlayerId(1))
+    place_on_board(state, inf2, Lane.SUPPORTLINE, owner=PlayerId(1))
+
+    hp1_before = state.inst(inf1).current_health
+    hp2_before = state.inst(inf2).current_health
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=eagle))
+    assert res.violation is None
+    assert state.inst(inf1).current_health == hp1_before - 2
+    assert state.inst(inf2).current_health == hp2_before - 2
+
+
+def test_eagle_claw_does_not_hit_friendly_supportline(engine: Engine) -> None:
+    """鹰爪不应对己方支援线单位造成伤害。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+
+    eagle = state.allocate_card(EagleClaw, owner=PlayerId(0))
+    state.inst(eagle).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(eagle)
+    state.players[PlayerId(0)].credits = 10
+
+    friendly = state.allocate_card(Infantry, owner=PlayerId(0))
+    place_on_board(state, friendly, Lane.SUPPORTLINE, owner=PlayerId(0))
+
+    enemy = state.allocate_card(Infantry, owner=PlayerId(1))
+    place_on_board(state, enemy, Lane.SUPPORTLINE, owner=PlayerId(1))
+
+    hp_friendly_before = state.inst(friendly).current_health
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=eagle))
+    assert res.violation is None
+    assert state.inst(friendly).current_health == hp_friendly_before
+
+
+# -- CoordinatedOps -----------------------------------------------------------
+
+def test_coordinated_ops_buffs_tank_by_type_count(engine: Engine) -> None:
+    """协同作战应按友方不同单位类型数给目标坦克+N/+N。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    tank = state.allocate_card(LightTank, owner=PlayerId(0))
+    inf = state.allocate_card(Infantry, owner=PlayerId(0))
+    ftr = state.allocate_card(Fighter, owner=PlayerId(0))
+    place_on_board(state, tank, Lane.SUPPORTLINE, owner=PlayerId(0))
+    place_on_board(state, inf, Lane.SUPPORTLINE, owner=PlayerId(0))
+    place_on_board(state, ftr, Lane.SUPPORTLINE, owner=PlayerId(0))
+
+    order = state.allocate_card(CoordinatedOps, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    atk_before = state.inst(tank).current_attack
+    hp_before = state.inst(tank).current_health
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=tank))
+    assert res.violation is None
+    assert state.inst(tank).current_attack == atk_before + 3
+    assert state.inst(tank).current_health == hp_before + 3
+
+
+def test_coordinated_ops_only_one_type(engine: Engine) -> None:
+    """场上只有坦克时，协同作战只给+1/+1。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    tank = state.allocate_card(LightTank, owner=PlayerId(0))
+    place_on_board(state, tank, Lane.SUPPORTLINE, owner=PlayerId(0))
+
+    order = state.allocate_card(CoordinatedOps, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    atk_before = state.inst(tank).current_attack
+    hp_before = state.inst(tank).current_health
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=tank))
+    assert res.violation is None
+    assert state.inst(tank).current_attack == atk_before + 1
+    assert state.inst(tank).current_health == hp_before + 1
+
+
+def test_coordinated_ops_rejects_non_tank_target(engine: Engine) -> None:
+    """协同作战指定非坦克目标时应报错且不消耗卡牌。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    inf = state.allocate_card(Infantry, owner=PlayerId(0))
+    place_on_board(state, inf, Lane.SUPPORTLINE, owner=PlayerId(0))
+
+    order = state.allocate_card(CoordinatedOps, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    hand_before = list(state.players[PlayerId(0)].hand)
+    credits_before = state.players[PlayerId(0)].credits
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=inf))
+    assert res.violation is not None
+    assert "tank" in res.violation.reason
+    assert state.players[PlayerId(0)].hand == hand_before
+    assert state.players[PlayerId(0)].credits == credits_before
+
+
+def test_coordinated_ops_rejects_no_target(engine: Engine) -> None:
+    """协同作战不指定目标时应报错。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    order = state.allocate_card(CoordinatedOps, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order))
+    assert res.violation is not None
+
+
+# -- Blackout ------------------------------------------------------------------
+
+def test_blackout_suppresses_enemy_fighter(engine: Engine) -> None:
+    """灯火管制应压制目标敌方空军，使其无法攻击和移动。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    enemy_ftr = state.allocate_card(Fighter, owner=PlayerId(1))
+    place_on_board(state, enemy_ftr, Lane.SUPPORTLINE, owner=PlayerId(1))
+    state.inst(enemy_ftr).exhausted = False
+
+    order = state.allocate_card(Blackout, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=enemy_ftr))
+    assert res.violation is None
+    assert state.inst(enemy_ftr).suppressed is True
+
+
+def test_blackout_suppressed_unit_cannot_attack(engine: Engine) -> None:
+    """被压制的单位不能攻击。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+
+    ftr = state.allocate_card(Fighter, owner=PlayerId(0))
+    place_on_board(state, ftr, Lane.FRONTLINE, owner=PlayerId(0))
+    state.inst(ftr).exhausted = False
+    state.inst(ftr).suppressed = True
+    state.inst(ftr).suppressed_until_turn = 99
+
+    enemy = state.allocate_card(Infantry, owner=PlayerId(1))
+    place_on_board(state, enemy, Lane.FRONTLINE, owner=PlayerId(1))
+
+    state.players[PlayerId(0)].credits = 10
+
+    res = engine.step(state, Attack(player_id=PlayerId(0), attacker=ftr, defender=enemy))
+    assert res.violation is not None
+    assert "suppressed" in res.violation.reason
+
+
+def test_blackout_suppression_clears_at_owner_turn_end(engine: Engine) -> None:
+    """压制应在目标所有者的下个回合结束时移除。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    enemy_ftr = state.allocate_card(Fighter, owner=PlayerId(1))
+    place_on_board(state, enemy_ftr, Lane.SUPPORTLINE, owner=PlayerId(1))
+
+    order = state.allocate_card(Blackout, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=enemy_ftr))
+    assert state.inst(enemy_ftr).suppressed is True
+
+    engine.step(state, EndTurn(player_id=PlayerId(0)))
+    assert state.inst(enemy_ftr).suppressed is True
+
+    engine.step(state, EndTurn(player_id=PlayerId(1)))
+    assert state.inst(enemy_ftr).suppressed is False
+
+
+def test_blackout_rejects_non_air_target(engine: Engine) -> None:
+    """灯火管制指定非空军目标时应报错。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    enemy_inf = state.allocate_card(Infantry, owner=PlayerId(1))
+    place_on_board(state, enemy_inf, Lane.SUPPORTLINE, owner=PlayerId(1))
+
+    order = state.allocate_card(Blackout, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=enemy_inf))
+    assert res.violation is not None
+    assert "air" in res.violation.reason
+
+
+def test_blackout_draws_a_card(engine: Engine) -> None:
+    """灯火管制打出后应抽1张牌。"""
+    state = Engine.new_game(
+        [GermanyHeadquarters, Infantry, Infantry, Infantry, Infantry, Infantry, Infantry],
+        [SovietHeadquarters, Infantry],
+        seed=1,
+    )
+    state.players[PlayerId(0)].credits = 10
+
+    enemy_ftr = state.allocate_card(Fighter, owner=PlayerId(1))
+    place_on_board(state, enemy_ftr, Lane.SUPPORTLINE, owner=PlayerId(1))
+
+    order = state.allocate_card(Blackout, owner=PlayerId(0))
+    state.inst(order).zone = Zone.HAND
+    state.players[PlayerId(0)].hand.append(order)
+
+    hand_before = len(state.players[PlayerId(0)].hand)
+    res = engine.step(state, PlayCard(player_id=PlayerId(0), card=order, target=enemy_ftr))
+    assert res.violation is None
+    assert len(state.players[PlayerId(0)].hand) == hand_before

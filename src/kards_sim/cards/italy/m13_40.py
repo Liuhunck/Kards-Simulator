@@ -20,6 +20,7 @@ class M1340(UnitCard):
     acost = 1
     attack_value = 3
     health_value = 4
+    description = "部署时若有友方步兵，获得闪击"
 
     def on_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         assert ctx.source is not None and ctx.player_id is not None

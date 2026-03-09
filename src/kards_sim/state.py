@@ -35,6 +35,9 @@ class CardInstance:
     ambush_available: bool = True
     mobilize_active: bool = True
 
+    suppressed: bool = False
+    suppressed_until_turn: int = -1
+
 
 @dataclass(slots=True)
 class PlayerState:

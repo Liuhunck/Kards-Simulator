@@ -20,6 +20,7 @@ class RadioTeam(UnitCard):
     acost = 2
     attack_value = 1
     health_value = 2
+    description = "部署时抽1张牌"
 
     def on_deploy(self, state: GameState, ctx: TriggerContext) -> list[Event]:
         from ...events import CardDrawn
